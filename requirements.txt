@@ -1,0 +1,10 @@
+aiogram
+sqlalchemy[asyncio]
+aiosqlite
+aiohttp
+yarl
+apscheduler
+python-dotenv
+pydantic-settings
+pytest
+pytest-asyncio

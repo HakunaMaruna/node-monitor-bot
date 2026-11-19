@@ -1,0 +1,12 @@
+services:
+  bot:
+    build: .
+    env_file: .env
+    environment:
+      DB_URL: sqlite+aiosqlite:///./data/nodes.db
+    volumes:
+      - bot-data:/app/data
+    restart: always
+
+volumes:
+  bot-data:

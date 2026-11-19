@@ -1,0 +1,83 @@
+import logging
+
+from aiogram import Bot
+from aiogram.exceptions import TelegramAPIError
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.interval import IntervalTrigger
+
+from app.models.node import Node, naive_utcnow
+from app.services.monitor import check_node
+from app.services.notifier import send_status_alert
+from app.services.nodes import list_nodes
+from app.utils.formatting import format_summary
+
+logger = logging.getLogger(__name__)
+
+
+class MonitorScheduler:
+    def __init__(
+        self,
+        bot: Bot,
+        *,
+        alert_chat_id: int,
+        summary_chat_id: int,
+        poll_tick_seconds: int = 1,
+        summary_interval_hours: int = 1,
+    ) -> None:
+        self.bot = bot
+        self.alert_chat_id = alert_chat_id
+        self.summary_chat_id = summary_chat_id
+        self.poll_tick_seconds = poll_tick_seconds
+        self.summary_interval_hours = summary_interval_hours
+        self.scheduler = AsyncIOScheduler()
+
+    def start(self) -> None:
+        self.scheduler.add_job(
+            self.poll_nodes,
+            trigger=IntervalTrigger(seconds=self.poll_tick_seconds),
+            id="poll_nodes",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+        )
+        self.scheduler.add_job(
+            self.send_summary,
+            trigger=IntervalTrigger(hours=self.summary_interval_hours),
+            id="send_summary",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+        )
+        self.scheduler.start()
+
+    def stop(self) -> None:
+        if self.scheduler.running:
+            self.scheduler.shutdown()
+
+    async def _check_node(self, node: Node) -> None:
+        status, _, should_notify = await check_node(node)
+        if should_notify:
+            await send_status_alert(self.bot, node, status, self.alert_chat_id)
+
+    async def poll_nodes(self) -> None:
+        now = naive_utcnow()
+        for node in await list_nodes(enabled_only=True):
+            if node.last_check_time is None:
+                await self._check_node(node)
+                continue
+            if (now - node.last_check_time).total_seconds() >= node.interval_seconds:
+                await self._check_node(node)
+
+    async def check_all(self) -> None:
+        for node in await list_nodes(enabled_only=True):
+            await self._check_node(node)
+
+    async def send_summary(self) -> None:
+        nodes = await list_nodes()
+        try:
+            await self.bot.send_message(
+                chat_id=self.summary_chat_id,
+                text=format_summary(nodes),
+            )
+        except TelegramAPIError:
+            logger.exception("Не удалось отправить сводку")
