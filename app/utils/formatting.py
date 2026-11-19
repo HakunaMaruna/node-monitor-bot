@@ -1,4 +1,5 @@
 from app.models.node import Node
+from app.utils.intervals import format_interval
 
 
 def status_label(status: bool) -> str:
@@ -20,6 +21,7 @@ def format_node_card(node: Node) -> str:
         f"Адрес: {node.protocol}://{node.ip}:{node.port}\n"
         f"Статус: {status_label(node.last_status)}\n"
         f"Проверка: {'включена' if node.enabled else 'выключена'}\n"
+        f"Интервал опроса: {format_interval(node.check_interval, node.check_interval_unit)}\n"
         f"Таймаут: {node.timeout_sec} с\n"
         f"Ожидаемый ответ: {node.expected_response or '-'}\n"
         f"Последняя проверка: {checked}"

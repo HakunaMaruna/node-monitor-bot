@@ -5,7 +5,7 @@ from aiogram import Bot, Dispatcher
 
 from app.config import settings
 from app.database import init_db
-from app.handlers.admin import router as admin_router
+from app.handlers.admin import fallback_router, router as admin_router
 from app.handlers.menu import router as menu_router
 from app.middlewares.admin import AdminOnlyMiddleware
 from app.services.scheduler import MonitorScheduler
@@ -21,14 +21,15 @@ async def main() -> None:
     dp = Dispatcher()
     dp.message.middleware(AdminOnlyMiddleware(settings.ADMIN_ID))
     dp.callback_query.middleware(AdminOnlyMiddleware(settings.ADMIN_ID))
-    dp.include_router(menu_router)
     dp.include_router(admin_router)
+    dp.include_router(menu_router)
+    dp.include_router(fallback_router)
 
     scheduler = MonitorScheduler(
         bot,
         alert_chat_id=settings.ALERT_CHAT_ID or settings.ADMIN_ID,
         summary_chat_id=settings.SUMMARY_CHAT_ID or settings.ADMIN_ID,
-        check_interval_minutes=settings.DEFAULT_CHECK_INTERVAL,
+        poll_tick_seconds=settings.POLL_TICK_SECONDS,
         summary_interval_hours=settings.SUMMARY_INTERVAL_HOURS,
     )
     scheduler.start()

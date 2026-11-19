@@ -6,6 +6,7 @@ from app.services.nodes import (
     get_node,
     list_nodes,
     set_enabled,
+    set_interval,
     update_node_status,
 )
 
@@ -36,6 +37,16 @@ async def test_node_crud(node_db):
     loaded = await get_node(node.id)
     assert loaded.last_status is False
     assert loaded.last_check_time == checked_at
+    assert loaded.check_interval == 1
+    assert loaded.check_interval_unit == "m"
+    assert loaded.last_notified_status is None
+
+    assert await set_interval(node.id, 2, "h") is True
+    loaded = await get_node(node.id)
+    assert loaded.check_interval == 2
+    assert loaded.check_interval_unit == "h"
+    assert loaded.interval_seconds == 7200
+    assert await set_interval(node.id, 0, "h") is False
 
     assert await delete_node(node.id) is True
     assert await get_node(node.id) is None

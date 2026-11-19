@@ -4,10 +4,12 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from app.config import settings
-from app.handlers.states import AddNode
+from app.handlers.states import AddNode, SetInterval
 from app.services.monitor import check_node
-from app.services.nodes import add_node, delete_node, get_node, list_nodes, set_enabled
-from app.utils.formatting import format_node_card, format_status_change
+from app.services.notifier import send_status_alert
+from app.services.nodes import add_node, delete_node, get_node, list_nodes, set_enabled, set_interval
+from app.utils.formatting import format_node_card
+from app.utils.intervals import format_interval, parse_interval
 from app.utils.keyboards import (
     cancel_keyboard,
     confirm_delete,
@@ -20,6 +22,7 @@ from app.utils.keyboards import (
 )
 
 router = Router()
+STALE_MESSAGE_ERRORS = ("message is not modified", "message to edit not found")
 
 HELP_TEXT = (
     "Управление кнопками или командами:\n"
@@ -29,7 +32,8 @@ HELP_TEXT = (
     "/check [id] - проверить ноду или все включённые\n"
     "/remove <id> - удалить ноду\n"
     "/enable <id>, /disable <id> - переключатель проверки\n"
-    f"Проверки каждые {settings.DEFAULT_CHECK_INTERVAL} мин, "
+    "/interval <id> <30s|5m|2h> - интервал опроса ноды\n"
+    f"Опрос запускается каждые {settings.POLL_TICK_SECONDS} с, "
     f"сводка раз в {settings.SUMMARY_INTERVAL_HOURS} ч"
 )
 
@@ -60,7 +64,7 @@ async def edit_message(callback: CallbackQuery, text: str, markup) -> None:
     try:
         await callback.message.edit_text(text, reply_markup=markup)
     except TelegramBadRequest as exc:
-        if "message is not modified" not in str(exc).lower():
+        if not any(phrase in str(exc).lower() for phrase in STALE_MESSAGE_ERRORS):
             raise
 
 
@@ -78,21 +82,21 @@ async def render_node(callback: CallbackQuery, node) -> None:
 
 
 def parse_id(data: str, prefix: str) -> int | None:
+    expected = f"{prefix}:"
+    if not data.startswith(expected):
+        return None
     try:
-        return int(data.split(":", 1)[1])
-    except (ValueError, IndexError):
+        return int(data[len(expected):])
+    except ValueError:
         return None
 
 
 async def perform_checks(nodes, bot: Bot) -> str:
     results = []
     for node in nodes:
-        status, changed = await check_node(node)
-        if changed:
-            await bot.send_message(
-                chat_id=settings.ALERT_CHAT_ID or settings.ADMIN_ID,
-                text=format_status_change(node, status),
-            )
+        status, _, should_notify = await check_node(node)
+        if should_notify:
+            await send_status_alert(bot, node, status, settings.ALERT_CHAT_ID or settings.ADMIN_ID)
         results.append(f"#{node.id} {node.name}: {'UP' if status else 'DOWN'}")
     return "\n".join(results)
 
@@ -171,6 +175,23 @@ async def cb_node(callback: CallbackQuery) -> None:
     await render_node(callback, node)
 
 
+@router.callback_query(F.data.startswith("interval:"))
+async def cb_interval(callback: CallbackQuery, state: FSMContext) -> None:
+    node_id = parse_id(callback.data, "interval")
+    node = await get_node(node_id) if node_id is not None else None
+    if node is None:
+        await answer_callback(callback, "Нода не найдена", show_alert=True)
+        return
+    await state.update_data(interval_node_id=node.id)
+    await state.set_state(SetInterval.value)
+    await answer_callback(callback)
+    await edit_message(
+        callback,
+        f"Интервал опроса ноды {node.name}.\nВведите, например, 30s, 5m или 2h:",
+        cancel_keyboard(),
+    )
+
+
 @router.callback_query(F.data.startswith("check:"))
 async def cb_check_node(callback: CallbackQuery, bot: Bot) -> None:
     await answer_callback(callback)
@@ -180,6 +201,9 @@ async def cb_check_node(callback: CallbackQuery, bot: Bot) -> None:
         return
     text = await perform_checks([node], bot)
     updated = await get_node(node.id)
+    if updated is None:
+        await edit_message(callback, "Нода не найдена.", main_inline())
+        return
     await edit_message(callback, f"{text}\n\n{format_node_card(updated)}", node_actions(updated))
 
 
@@ -192,6 +216,10 @@ async def cb_toggle(callback: CallbackQuery) -> None:
         return
     await set_enabled(node.id, not node.enabled)
     updated = await get_node(node.id)
+    if updated is None:
+        await answer_callback(callback, "Нода не найдена", show_alert=True)
+        await edit_message(callback, "Нода не найдена.", main_inline())
+        return
     await render_node(callback, updated)
 
 
@@ -311,6 +339,28 @@ async def finish_add(event: Message | CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     text = f"Нода #{node.id} добавлена.\n{format_node_card(node)}"
     await render(event, text, node_actions(node))
+
+
+@router.message(SetInterval.value)
+async def save_interval(message: Message, state: FSMContext) -> None:
+    parsed = parse_interval(message.text or "")
+    if parsed is None:
+        await message.answer("Формат: 30s, 5m или 2h.", reply_markup=cancel_keyboard())
+        return
+
+    data = await state.get_data()
+    node_id = data.get("interval_node_id")
+    amount, unit = parsed
+    await state.clear()
+    if not isinstance(node_id, int) or not await set_interval(node_id, amount, unit):
+        await message.answer("Нода не найдена.", reply_markup=main_inline())
+        return
+
+    node = await get_node(node_id)
+    await message.answer(
+        f"Интервал опроса: {format_interval(amount, unit)}.\n{format_node_card(node)}",
+        reply_markup=node_actions(node),
+    )
 
 
 @router.callback_query()

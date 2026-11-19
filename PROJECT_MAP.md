@@ -7,26 +7,30 @@ Telegram-бот для периодической проверки нод (TCP/H
 ```
 /work
 ├── app/
-│   ├── main.py                  точка входа: БД, диспетчер, middleware, scheduler, polling
+│   ├── main.py                  точка входа: БД, диспетчер (admin → menu → fallback), scheduler, polling
 │   ├── config.py                настройки из .env (pydantic-settings)
 │   ├── database.py              async-движок SQLAlchemy, сессии, init_db()
-│   ├── models/node.py           модель Node (адрес, протокол, таймаут, ожидаемый ответ, статус)
-│   ├── handlers/admin.py        команды /start /help /add /list /remove /enable /disable /check
-│   ├── handlers/menu.py         inline/reply-меню, колбэки, FSM-мастер добавления ноды
-│   ├── handlers/states.py       состояния FSM для мастера AddNode
+│   ├── models/node.py           модель Node (адрес, протокол, таймаут, интервал опроса, статус)
+│   ├── handlers/admin.py        команды /start /help /add /list /remove /enable /disable /interval /check и fallback
+│   ├── handlers/menu.py         inline/reply-меню, колбэки, FSM-мастера AddNode и SetInterval
+│   ├── handlers/states.py       состояния FSM AddNode и SetInterval
 │   ├── middlewares/admin.py     ограничение сообщений и колбэков по ADMIN_ID
 │   ├── services/
-│   │   ├── nodes.py             CRUD и обновление статуса нод
-│   │   ├── ping.py              TCP/HTTP(S) проверки и ожидаемый текст ответа
+│   │   ├── nodes.py             CRUD и атомарная запись результата проверки
+│   │   ├── ping.py              TCP/HTTP(S) проверки, нормализация URL и ожидаемый текст ответа
 │   │   ├── monitor.py           однократная проверка + запись результата в БД
-│   │   └── scheduler.py         APScheduler: проверки и сводки, отправка алертов в Telegram
+│   │   ├── scheduler.py         APScheduler: опрос по интервалу нод и сводки
+│   │   └── notifier.py          отправка алертов с подавлением ошибок Telegram
 │   ├── utils/formatting.py      форматирование статуса, карточки, алерта и сводки
-│   └── utils/keyboards.py       reply/inline-клавиатуры меню, списка, карточки и мастера
+│   ├── utils/intervals.py       разбор и форматирование интервалов s/m/h
+│   └── utils/keyboards.py       reply/inline-клавиатуры меню, списка, карточки и мастеров
 ├── tests/                       pytest: ping, CRUD, monitor, scheduler, middleware, keyboards
 ├── conftest.py                  тестовые env-переменные и in-memory SQLite
 ├── .env.example                 шаблон переменных окружения
 ├── requirements.txt             зависимости (включая sqlalchemy[asyncio])
-├── Dockerfile / docker-compose.yml  контейнерный запуск
+├── .dockerignore / Dockerfile / docker-compose.yml  контейнерный запуск
+├── .github/workflows/docker-publish.yml  сборка и публикация образа в GHCR
+├── DOCKER.md                    подробная инструкция по Docker
 └── README.md                    установка и команды бота
 ```
 
@@ -34,8 +38,8 @@ Telegram-бот для периодической проверки нод (TCP/H
 
 1. **Добавление ноды:** кнопка «Добавить ноду» или `/add` → FSM `AddNode` → `services/nodes.add_node()` → таблица `nodes`.
 2. **Навигация:** reply-кнопки и inline-меню → `handlers/menu.py` → карточка ноды/список/подтверждение удаления.
-3. **Проверка:** `scheduler.check_all()`, кнопка «Проверить» или `/check` → `monitor.check_node()` → `ping.PingService.check_node()` → `nodes.update_node_status()`.
-4. **Алерт:** при изменении `last_status` scheduler/handler отправляет сообщение в `ALERT_CHAT_ID` (или `ADMIN_ID`).
+3. **Проверка:** `scheduler.poll_nodes()` по интервалу ноды, кнопка «Проверить» или `/check` → `monitor.check_node()` → `ping.PingService.check_node()` → `nodes.record_check_result()`.
+4. **Алерт:** DOWN — после каждой проверки по интервалу, UP — один раз при восстановлении (`last_notified_status`) → `services/notifier.py` → `ALERT_CHAT_ID` (или `ADMIN_ID`).
 5. **Сводка:** по расписанию `send_summary()` → `utils.formatting.format_summary()` → `SUMMARY_CHAT_ID` (или `ADMIN_ID`).
 
 ## Запуск и проверки
@@ -45,8 +49,10 @@ cp .env.example .env
 pip install -r requirements.txt
 python -m app.main
 pytest -q
-docker-compose up -d
+docker compose pull && docker compose up -d
 ```
 
+Образ публикуется в `ghcr.io/hakunamaruna/node-monitor-bot:latest` через GitHub Actions.
+
 Переменные: `BOT_TOKEN`, `ADMIN_ID`, `DB_URL`, `ALERT_CHAT_ID`, `SUMMARY_CHAT_ID`,
-`DEFAULT_CHECK_INTERVAL` (минуты), `SUMMARY_INTERVAL_HOURS`.
+`POLL_TICK_SECONDS` (секунды), `SUMMARY_INTERVAL_HOURS`.

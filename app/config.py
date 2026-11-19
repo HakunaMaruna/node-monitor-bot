@@ -1,4 +1,4 @@
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -10,10 +10,10 @@ class Settings(BaseSettings):
     ALERT_CHAT_ID: int | None = None
     SUMMARY_CHAT_ID: int | None = None
 
-    DEFAULT_CHECK_INTERVAL: int = 5
-    SUMMARY_INTERVAL_HOURS: int = 1
+    POLL_TICK_SECONDS: int = Field(default=1, gt=0)
+    SUMMARY_INTERVAL_HOURS: int = Field(default=1, gt=0)
 
-    model_config = SettingsConfigDict(env_file=".env")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @field_validator("ALERT_CHAT_ID", "SUMMARY_CHAT_ID", mode="before")
     @classmethod

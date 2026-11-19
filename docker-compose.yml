@@ -1,9 +1,13 @@
-version: '3.8'
 services:
   bot:
     build: .
-    volumes:
-      - .:/app
+    image: ghcr.io/hakunamaruna/node-monitor-bot:latest
+    env_file: .env
     environment:
-      - ENV=prod
+      DB_URL: sqlite+aiosqlite:///./data/nodes.db
+    volumes:
+      - bot-data:/app/data
     restart: always
+
+volumes:
+  bot-data:

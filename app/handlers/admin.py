@@ -4,31 +4,38 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
 from app.handlers import menu
-from app.services.nodes import add_node, delete_node, get_node, list_nodes, set_enabled
+from app.services.nodes import add_node, delete_node, get_node, list_nodes, set_enabled, set_interval
 from app.utils.formatting import format_node_card
+from app.utils.intervals import format_interval, parse_interval
 
 router = Router()
+fallback_router = Router()
 
 
 @router.message(Command("start"))
-async def cmd_start(message: Message) -> None:
+async def cmd_start(message: Message, state: FSMContext) -> None:
+    await state.clear()
     await menu.show_main(message)
 
 
 @router.message(Command("help"))
-async def cmd_help(message: Message) -> None:
+async def cmd_help(message: Message, state: FSMContext) -> None:
+    await state.clear()
     await menu.show_help(message)
 
 
 @router.message(Command("add"))
 async def cmd_add(message: Message, command: CommandObject, state: FSMContext) -> None:
+    await state.clear()
     if not command.args:
         await menu.start_add_flow(message, state)
         return
 
     parts = command.args.split()
     if len(parts) < 4:
-        await message.answer("Формат: /add <name> <TCP|HTTP|HTTPS> <ip> <port> [timeout] [expected]")
+        await message.answer(
+            "Формат: /add <name> <TCP|HTTP|HTTPS> <ip> <port> [timeout] [expected]"
+        )
         return
 
     name, protocol, ip, port_value = parts[:4]
@@ -58,12 +65,14 @@ async def cmd_add(message: Message, command: CommandObject, state: FSMContext) -
 
 
 @router.message(Command("list"))
-async def cmd_list(message: Message) -> None:
+async def cmd_list(message: Message, state: FSMContext) -> None:
+    await state.clear()
     await menu.show_list(message)
 
 
 @router.message(Command("remove"))
-async def cmd_remove(message: Message, command: CommandObject) -> None:
+async def cmd_remove(message: Message, command: CommandObject, state: FSMContext) -> None:
+    await state.clear()
     node_id = parse_id(command.args)
     if node_id is None:
         await message.answer("Формат: /remove <id>")
@@ -76,12 +85,13 @@ async def cmd_remove(message: Message, command: CommandObject) -> None:
 
 @router.message(Command("enable"))
 @router.message(Command("disable"))
-async def cmd_set_enabled(message: Message, command: CommandObject) -> None:
+async def cmd_set_enabled(message: Message, command: CommandObject, state: FSMContext) -> None:
+    await state.clear()
     node_id = parse_id(command.args)
     if node_id is None:
         await message.answer("Формат: /enable <id> или /disable <id>")
         return
-    enabled = message.text is not None and message.text.startswith("/enable")
+    enabled = (command.command or "").lower() == "enable"
     if await set_enabled(node_id, enabled):
         await message.answer(f"Нода #{node_id}: {'включена' if enabled else 'выключена'}.")
     else:
@@ -89,7 +99,8 @@ async def cmd_set_enabled(message: Message, command: CommandObject) -> None:
 
 
 @router.message(Command("check"))
-async def cmd_check(message: Message, command: CommandObject, bot: Bot) -> None:
+async def cmd_check(message: Message, command: CommandObject, state: FSMContext, bot: Bot) -> None:
+    await state.clear()
     node_id = parse_id(command.args)
     if command.args and node_id is None:
         await message.answer("Формат: /check [id]")
@@ -110,6 +121,27 @@ async def cmd_check(message: Message, command: CommandObject, bot: Bot) -> None:
     await message.answer(await menu.perform_checks(nodes, bot))
 
 
+@router.message(Command("interval"))
+async def cmd_interval(message: Message, command: CommandObject, state: FSMContext) -> None:
+    await state.clear()
+    parts = (command.args or "").split()
+    parsed = parse_interval(" ".join(parts[1:])) if len(parts) >= 2 else None
+    node_id = parse_id(parts[0]) if parts else None
+    if node_id is None or parsed is None:
+        await message.answer("Формат: /interval <id> <30s|5m|2h>")
+        return
+
+    amount, unit = parsed
+    if not await set_interval(node_id, amount, unit):
+        await message.answer(f"Нода #{node_id} не найдена.")
+        return
+
+    node = await get_node(node_id)
+    await message.answer(
+        f"Интервал опроса: {format_interval(amount, unit)}.\n{format_node_card(node)}"
+    )
+
+
 def parse_id(args: str | None) -> int | None:
     try:
         return int((args or "").strip())
@@ -117,8 +149,9 @@ def parse_id(args: str | None) -> int | None:
         return None
 
 
-@router.message()
-async def cmd_unknown(message: Message) -> None:
+@fallback_router.message()
+async def cmd_unknown(message: Message, state: FSMContext) -> None:
+    await state.clear()
     await message.answer(
         "Не понял сообщение. Используйте кнопки или /help.",
         reply_markup=menu.main_inline(),

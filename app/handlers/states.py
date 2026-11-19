@@ -8,3 +8,7 @@ class AddNode(StatesGroup):
     port = State()
     timeout = State()
     expected = State()
+
+
+class SetInterval(StatesGroup):
+    value = State()

@@ -11,14 +11,40 @@ async def test_check_node_persists_status_change(node_db, monkeypatch):
         return False
 
     monkeypatch.setattr(PingService, "check_node", staticmethod(down))
-    assert await check_node(node) == (False, True)
+    assert await check_node(node) == (False, True, True)
 
     updated = await get_node(node.id)
     assert updated.last_status is False
     assert updated.last_check_time is not None
 
     node = await get_node(node.id)
-    assert await check_node(node) == (False, False)
+    assert await check_node(node) == (False, False, True)
+
+
+async def test_check_node_ignores_stale_object_status(node_db, monkeypatch):
+    node = await add_test_node()
+    fresh = await get_node(node.id)
+    stale = await get_node(node.id)
+
+    async def down(candidate):
+        return False
+
+    monkeypatch.setattr(PingService, "check_node", staticmethod(down))
+    assert await check_node(fresh) == (False, True, True)
+    assert await check_node(stale) == (False, False, True)
+
+
+async def test_notification_rules(node_db, monkeypatch):
+    node = await add_test_node()
+    statuses = iter([False, True, True])
+
+    async def next_status(candidate):
+        return next(statuses)
+
+    monkeypatch.setattr(PingService, "check_node", staticmethod(next_status))
+    assert await check_node(node) == (False, True, True)
+    assert await check_node(node) == (True, True, True)
+    assert await check_node(node) == (True, False, False)
 
 
 async def add_test_node():

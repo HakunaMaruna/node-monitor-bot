@@ -1,8 +1,58 @@
 import asyncio
+from ipaddress import ip_address
 
 import aiohttp
+from yarl import URL
 
 from app.models.node import Node
+
+
+def split_host_and_port(raw: str) -> tuple[str, int | None]:
+    if raw.startswith("["):
+        closing = raw.find("]")
+        if closing == -1:
+            return raw, None
+        host = raw[1:closing]
+        rest = raw[closing + 1 :]
+        if rest.startswith(":"):
+            suffix = rest[1:]
+            return host, int(suffix) if suffix.isdigit() else None
+        return host, None
+
+    try:
+        ip_address(raw)
+    except ValueError:
+        if raw.count(":") == 1:
+            host, _, suffix = raw.rpartition(":")
+            if host and suffix.isdigit():
+                return host, int(suffix)
+
+    return raw, None
+
+
+def build_check_url(node: Node) -> str | None:
+    raw = (node.ip or "").strip()
+    scheme = node.protocol.lower()
+    port = node.port
+
+    if "://" in raw:
+        try:
+            parsed = URL(raw)
+        except ValueError:
+            return None
+        if parsed.scheme in {"http", "https"}:
+            scheme = parsed.scheme
+        host = parsed.host or raw
+        port = parsed.port or port
+    else:
+        host, embedded_port = split_host_and_port(raw.split("/", 1)[0])
+        if embedded_port is not None:
+            port = embedded_port
+
+    try:
+        return str(URL.build(scheme=scheme, host=host, port=port))
+    except ValueError:
+        return None
 
 
 class PingService:
@@ -41,7 +91,7 @@ class PingService:
                         return True
                     body = await response.text()
                     return expected_response in body
-        except (aiohttp.ClientError, asyncio.TimeoutError, OSError):
+        except (aiohttp.ClientError, asyncio.TimeoutError, OSError, UnicodeError):
             return False
 
     @classmethod
@@ -50,7 +100,9 @@ class PingService:
             return await cls.check_tcp(node.ip, node.port, node.timeout_sec)
 
         if node.protocol in {"HTTP", "HTTPS"}:
-            url = f"{node.protocol.lower()}://{node.ip}:{node.port}"
+            url = build_check_url(node)
+            if url is None:
+                return False
             return await cls.check_http(
                 url, node.timeout_sec, expected_response=node.expected_response
             )
