@@ -1,4 +1,5 @@
 from aiogram import Bot, F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
@@ -48,17 +49,32 @@ async def show_list(event: Message | CallbackQuery) -> None:
     await render(event, text, nodes_list(nodes))
 
 
+async def answer_callback(callback: CallbackQuery, text: str | None = None, **kwargs) -> None:
+    try:
+        await callback.answer(text=text, **kwargs)
+    except TelegramBadRequest:
+        pass
+
+
+async def edit_message(callback: CallbackQuery, text: str, markup) -> None:
+    try:
+        await callback.message.edit_text(text, reply_markup=markup)
+    except TelegramBadRequest as exc:
+        if "message is not modified" not in str(exc).lower():
+            raise
+
+
 async def render(event: Message | CallbackQuery, text: str, markup) -> None:
     if isinstance(event, CallbackQuery):
-        await event.message.edit_text(text, reply_markup=markup)
-        await event.answer()
+        await answer_callback(event)
+        await edit_message(event, text, markup)
     else:
         await event.answer(text, reply_markup=markup)
 
 
 async def render_node(callback: CallbackQuery, node) -> None:
-    await callback.message.edit_text(format_node_card(node), reply_markup=node_actions(node))
-    await callback.answer()
+    await answer_callback(callback)
+    await edit_message(callback, format_node_card(node), node_actions(node))
 
 
 def parse_id(data: str, prefix: str) -> int | None:
@@ -115,15 +131,15 @@ async def button_help(message: Message, state: FSMContext) -> None:
 @router.callback_query(F.data == "cancel")
 async def cb_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
-    await callback.message.edit_text("Действие отменено.", reply_markup=main_inline())
-    await callback.answer()
+    await answer_callback(callback)
+    await edit_message(callback, "Действие отменено.", main_inline())
 
 
 @router.callback_query(F.data == "main")
 async def cb_main(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
-    await callback.message.edit_text("Мониторинг нод. Выберите действие:", reply_markup=main_inline())
-    await callback.answer()
+    await answer_callback(callback)
+    await edit_message(callback, "Мониторинг нод. Выберите действие:", main_inline())
 
 
 @router.callback_query(F.data == "list")
@@ -139,10 +155,10 @@ async def cb_add(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "check_all")
 async def cb_check_all(callback: CallbackQuery, bot: Bot) -> None:
+    await answer_callback(callback)
     nodes = await list_nodes(enabled_only=True)
     text = await perform_checks(nodes, bot) if nodes else "Нет включённых нод."
-    await callback.message.edit_text(text, reply_markup=main_inline())
-    await callback.answer()
+    await edit_message(callback, text, main_inline())
 
 
 @router.callback_query(F.data.startswith("node:"))
@@ -150,22 +166,21 @@ async def cb_node(callback: CallbackQuery) -> None:
     node_id = parse_id(callback.data, "node")
     node = await get_node(node_id) if node_id is not None else None
     if node is None:
-        await callback.answer("Нода не найдена", show_alert=True)
+        await answer_callback(callback, "Нода не найдена", show_alert=True)
         return
     await render_node(callback, node)
 
 
 @router.callback_query(F.data.startswith("check:"))
 async def cb_check_node(callback: CallbackQuery, bot: Bot) -> None:
+    await answer_callback(callback)
     node_id = parse_id(callback.data, "check")
     node = await get_node(node_id) if node_id is not None else None
     if node is None:
-        await callback.answer("Нода не найдена", show_alert=True)
         return
     text = await perform_checks([node], bot)
     updated = await get_node(node.id)
-    await callback.message.edit_text(f"{text}\n\n{format_node_card(updated)}", reply_markup=node_actions(updated))
-    await callback.answer()
+    await edit_message(callback, f"{text}\n\n{format_node_card(updated)}", node_actions(updated))
 
 
 @router.callback_query(F.data.startswith("toggle:"))
@@ -173,7 +188,7 @@ async def cb_toggle(callback: CallbackQuery) -> None:
     node_id = parse_id(callback.data, "toggle")
     node = await get_node(node_id) if node_id is not None else None
     if node is None:
-        await callback.answer("Нода не найдена", show_alert=True)
+        await answer_callback(callback, "Нода не найдена", show_alert=True)
         return
     await set_enabled(node.id, not node.enabled)
     updated = await get_node(node.id)
@@ -185,12 +200,10 @@ async def cb_delete(callback: CallbackQuery) -> None:
     node_id = parse_id(callback.data, "delete")
     node = await get_node(node_id) if node_id is not None else None
     if node is None:
-        await callback.answer("Нода не найдена", show_alert=True)
+        await answer_callback(callback, "Нода не найдена", show_alert=True)
         return
-    await callback.message.edit_text(
-        f"Удалить ноду {node.name}?", reply_markup=confirm_delete(node.id)
-    )
-    await callback.answer()
+    await answer_callback(callback)
+    await edit_message(callback, f"Удалить ноду {node.name}?", confirm_delete(node.id))
 
 
 @router.callback_query(F.data.startswith("confirm_delete:"))
@@ -217,8 +230,8 @@ async def add_protocol(callback: CallbackQuery, state: FSMContext) -> None:
     protocol = callback.data.split(":", 1)[1]
     await state.update_data(protocol=protocol)
     await state.set_state(AddNode.ip)
-    await callback.message.edit_text("Введите IP или хост:", reply_markup=cancel_keyboard())
-    await callback.answer()
+    await answer_callback(callback)
+    await edit_message(callback, "Введите IP или хост:", cancel_keyboard())
 
 
 @router.message(AddNode.ip)
