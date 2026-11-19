@@ -4,6 +4,8 @@ from app.models.node import Node
 from app.utils.history import append_check
 from app.utils.formatting import (
     format_blocked_change,
+    format_blocked_error,
+    format_cheburcheck_report,
     format_check_result,
     format_node_card,
     format_status_change,
@@ -109,6 +111,20 @@ def test_check_result_and_alerts_use_russian_statuses():
     assert "🔴 <b>#1 web</b> — Недоступна" in format_check_result(node, False)
     assert "🔴 <b>НЕДОСТУПНА</b>" in format_status_change(node, False)
     assert "🚫 <b>CHEBURCHECK: ЗАБЛОКИРОВАНА</b>" in format_blocked_change(node, True)
+
+
+def test_cheburcheck_report_escapes_errors():
+    error = format_blocked_error(make_node(name="<b>bad</b>"), "ошибка <script>")
+
+    assert "&lt;b&gt;bad&lt;/b&gt;" in error
+    assert "&lt;script&gt;" in error
+    assert "<script>" not in error
+
+    report = format_cheburcheck_report([error])
+
+    assert "<b>CHEBURCHECK: ОТЧЁТ</b>" in report
+    assert "• ⚠️ Cheburcheck" in report
+    assert "Нет включённых нод" in format_cheburcheck_report([])
 
 
 def test_summary_has_sections_and_no_disabled_nodes_in_lists():

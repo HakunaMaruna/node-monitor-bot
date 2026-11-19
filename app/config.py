@@ -9,6 +9,7 @@ class Settings(BaseSettings):
 
     ALERT_CHAT_ID: int | None = None
     SUMMARY_CHAT_ID: int | None = None
+    ALERT_REPEAT_MINUTES: int = Field(default=15, ge=0)
 
     POLL_TICK_SECONDS: int = Field(default=1, gt=0)
     SUMMARY_INTERVAL_HOURS: int = Field(default=1, gt=0)

@@ -35,6 +35,7 @@ BOT_TOKEN=123456789:AA...        # токен от @BotFather
 ADMIN_ID=123456789               # твой Telegram ID
 ALERT_CHAT_ID=                   # оставь пустым, если алерты в ADMIN_ID
 SUMMARY_CHAT_ID=                 # оставь пустым, если сводка в ADMIN_ID
+ALERT_REPEAT_MINUTES=15          # 0 — без подавления повторных DOWN-алертов
 POLL_TICK_SECONDS=1              # как часто проверять расписание нод
 SUMMARY_INTERVAL_HOURS=1         # периодичность сводки
 CHEBURCHECK_INTERVAL_HOURS=6     # периодичность проверки блокировок
@@ -110,7 +111,8 @@ docker compose run --rm -v "$PWD:/backup" bot \
 | `BOT_TOKEN` | да | — | токен Telegram-бота |
 | `ADMIN_ID` | да | — | ID администратора, ему доступны команды |
 | `ALERT_CHAT_ID` | нет | `ADMIN_ID` | чат для уведомлений о смене статуса |
-| `SUMMARY_CHAT_ID` | нет | `ADMIN_ID` | чат для периодической сводки |
+| `SUMMARY_CHAT_ID` | нет | `ADMIN_ID` | чат для сводки и отчёта Cheburcheck |
+| `ALERT_REPEAT_MINUTES` | нет | `15` | подавление повторных DOWN-алертов, `0` — отключить |
 | `POLL_TICK_SECONDS` | нет | `1` | частота опроса расписания проверок |
 | `SUMMARY_INTERVAL_HOURS` | нет | `1` | периодичность сводки |
 | `CHEBURCHECK_INTERVAL_HOURS` | нет | `6` | периодичность проверки Cheburcheck |
@@ -129,4 +131,4 @@ docker compose run --rm -v "$PWD:/backup" bot \
 
 ## 9. Автообновление
 
-Updater работает на хосте, а не внутри контейнера. Инструкция по GitHub Release, бэкапам, отправке архива в Telegram и откату: [UPDATES.md](UPDATES.md). Текущая версия бота — `ver. 1.2`, она доступна по команде `/version`.
+Updater работает на хосте, а не внутри контейнера. Инструкция по GitHub Release, бэкапам, отправке архива в Telegram и откату: [UPDATES.md](UPDATES.md). Текущая версия бота — `ver. 1.3`, она доступна по команде `/version`.

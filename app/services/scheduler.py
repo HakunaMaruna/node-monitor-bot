@@ -13,7 +13,7 @@ from app.services.monitor import check_node
 from app.services.notifier import send_status_alert
 from app.services.nodes import list_nodes
 from app.utils.design import PARSE_MODE
-from app.utils.formatting import format_summary
+from app.utils.formatting import format_cheburcheck_report, format_summary
 
 logger = logging.getLogger(__name__)
 
@@ -94,15 +94,30 @@ class MonitorScheduler:
         for node in await list_nodes(enabled_only=True):
             await self._check_node(node)
 
-    async def check_cheburcheck(self, nodes: list[Node] | None = None) -> list[str]:
+    async def check_cheburcheck(
+        self, nodes: list[Node] | None = None, *, report: bool = True
+    ) -> list[str]:
         targets = nodes if nodes is not None else await list_nodes(enabled_only=True)
-        return await refresh_nodes_blocked(
+        results = await refresh_nodes_blocked(
             targets,
             bot=self.bot,
             alert_chat_id=self.alert_chat_id,
             timeout_sec=self.cheburcheck_timeout_sec,
             delay_sec=self.cheburcheck_delay_sec,
         )
+        if report:
+            await self._send_cheburcheck_report(results)
+        return results
+
+    async def _send_cheburcheck_report(self, results: list[str]) -> None:
+        try:
+            await self.bot.send_message(
+                chat_id=self.summary_chat_id,
+                text=format_cheburcheck_report(results),
+                parse_mode=PARSE_MODE,
+            )
+        except TelegramAPIError:
+            logger.exception("Не удалось отправить отчёт Cheburcheck")
 
     async def send_summary(self) -> None:
         nodes = await list_nodes()

@@ -138,6 +138,13 @@ def format_status_change(node: Node, status: bool) -> str:
     )
 
 
+def format_blocked_error(node: Node, reason: str) -> str:
+    return (
+        f"{ICON['warning']} Cheburcheck · <b>#{node.id} {esc(node.name)}</b> — "
+        f"{esc(reason)}"
+    )
+
+
 def format_blocked_verdict(node: Node, blocked: bool | None) -> str:
     return (
         f"{ICON['shield']} Cheburcheck · <b>{esc(node.name)}</b> — "
@@ -195,6 +202,15 @@ def _limited(items: list[str]) -> list[str]:
     if len(items) <= MAX_LIST_ITEMS:
         return items
     return items[:MAX_LIST_ITEMS] + [f"… и ещё {len(items) - MAX_LIST_ITEMS}"]
+
+
+def format_cheburcheck_report(results: list[str]) -> str:
+    lines = [f"{ICON['shield']} <b>CHEBURCHECK: ОТЧЁТ</b>"]
+    if not results:
+        lines.append(f"{ICON['info']} Нет включённых нод")
+        return "\n".join(lines)
+    lines.extend(f"• {item}" for item in _limited(results))
+    return "\n".join(lines)
 
 
 def format_summary(nodes: list[Node]) -> str:

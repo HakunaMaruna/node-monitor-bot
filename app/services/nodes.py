@@ -2,6 +2,7 @@ from datetime import datetime
 
 from sqlalchemy import select, update
 
+from app.config import settings
 from app.database import async_session
 from app.models.node import Node
 from app.utils.history import append_check
@@ -87,17 +88,35 @@ async def record_check_result(
     *,
     latency_ms: int | None = None,
     error: str | None = None,
+    alert_repeat_seconds: int | None = None,
 ) -> tuple[bool, bool, bool]:
+    repeat_seconds = (
+        settings.ALERT_REPEAT_MINUTES * 60
+        if alert_repeat_seconds is None
+        else alert_repeat_seconds
+    )
     async with async_session() as session:
         node = await session.get(Node, node_id)
         if node is None:
             return False, False, False
 
         changed = node.last_status != status
-        should_notify = not status or node.last_notified_status is not True
+        if status:
+            should_notify = node.last_notified_status is not True
+            if should_notify:
+                node.last_alert_time = None
+        else:
+            last_alert_time = node.last_alert_time
+            repeat_due = (
+                last_alert_time is None
+                or (checked_at - last_alert_time).total_seconds() >= repeat_seconds
+            )
+            should_notify = changed or repeat_due
+            if should_notify:
+                node.last_alert_time = checked_at
         node.last_status = status
         node.last_check_time = checked_at
-        node.last_notified_status = False if not status else True
+        node.last_notified_status = status
         node.last_latency_ms = latency_ms
         node.last_error = None if status else error
         node.consecutive_failures = 0 if status else (node.consecutive_failures or 0) + 1

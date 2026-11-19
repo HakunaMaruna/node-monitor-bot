@@ -9,7 +9,7 @@ from app.models.node import Node, naive_utcnow
 from app.services.notifier import send_blocked_alert
 from app.services.nodes import record_blocked_result
 from app.services.ping import split_host_and_port
-from app.utils.formatting import format_blocked_verdict
+from app.utils.formatting import format_blocked_error, format_blocked_verdict
 
 logger = logging.getLogger(__name__)
 
@@ -74,17 +74,17 @@ async def refresh_node_blocked(
 ) -> tuple[bool | None, bool, str]:
     target = extract_target(node)
     if target is None:
-        return None, False, f"Cheburcheck: не удалось определить цель для ноды #{node.id}"
+        return None, False, format_blocked_error(node, "не удалось определить цель")
 
     try:
         blocked = await check_blocked(target, timeout_sec=timeout_sec)
     except CheburcheckError as exc:
         logger.warning("Cheburcheck-проверка ноды #%s не удалась: %s", node.id, exc)
-        return None, False, f"Cheburcheck: ошибка — {exc}"
+        return None, False, format_blocked_error(node, str(exc))
 
     exists, changed = await record_blocked_result(node.id, blocked, naive_utcnow())
     if not exists:
-        return None, False, f"Нода #{node.id} не найдена"
+        return None, False, format_blocked_error(node, "нода не найдена")
 
     if changed and bot is not None and alert_chat_id is not None:
         await send_blocked_alert(bot, node, blocked, alert_chat_id)

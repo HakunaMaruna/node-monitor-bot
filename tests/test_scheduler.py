@@ -114,13 +114,17 @@ async def test_scheduler_runs_cheburcheck_for_enabled_nodes(node_db, monkeypatch
 
     monkeypatch.setattr("app.services.scheduler.refresh_nodes_blocked", fake_refresh)
 
+    bot = FakeBot()
     scheduler = MonitorScheduler(
-        FakeBot(),
+        bot,
         alert_chat_id=100,
         summary_chat_id=200,
         cheburcheck_delay_sec=0,
     )
     assert await scheduler.check_cheburcheck() == ["ok"]
+    assert bot.messages[-1][0] == 200
+    assert "CHEBURCHECK: ОТЧЁТ" in bot.messages[-1][1]
+    assert "• ok" in bot.messages[-1][1]
     assert seen["ids"] == [node.id]
     assert seen["kwargs"]["alert_chat_id"] == 100
     assert seen["kwargs"]["delay_sec"] == 0

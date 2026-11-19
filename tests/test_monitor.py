@@ -22,7 +22,7 @@ async def test_check_node_persists_status_change(node_db, monkeypatch):
     assert updated.check_history is not None
 
     node = await get_node(node.id)
-    assert await check_node(node) == (False, False, True)
+    assert await check_node(node) == (False, False, False)
     updated = await get_node(node.id)
     assert updated.consecutive_failures == 2
 
@@ -37,18 +37,19 @@ async def test_check_node_ignores_stale_object_status(node_db, monkeypatch):
 
     monkeypatch.setattr(PingService, "check_node_detailed", staticmethod(down))
     assert await check_node(fresh) == (False, True, True)
-    assert await check_node(stale) == (False, False, True)
+    assert await check_node(stale) == (False, False, False)
 
 
 async def test_notification_rules(node_db, monkeypatch):
     node = await add_test_node()
-    statuses = iter([False, True, True])
+    statuses = iter([False, False, True, True])
 
     async def next_status(candidate):
         return CheckResult(next(statuses), 20, None)
 
     monkeypatch.setattr(PingService, "check_node_detailed", staticmethod(next_status))
     assert await check_node(node) == (False, True, True)
+    assert await check_node(node) == (False, False, False)
     assert await check_node(node) == (True, True, True)
     assert await check_node(node) == (True, False, False)
 

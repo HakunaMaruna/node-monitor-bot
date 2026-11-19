@@ -37,6 +37,7 @@ async def test_init_db_migrates_legacy_nodes_table(monkeypatch):
         "check_interval",
         "check_interval_unit",
         "last_notified_status",
+        "last_alert_time",
         "blocked",
         "blocked_checked_at",
         "last_latency_ms",

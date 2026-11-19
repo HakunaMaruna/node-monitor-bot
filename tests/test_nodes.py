@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app.services.nodes import (
     add_node,
@@ -42,6 +42,7 @@ async def test_node_crud(node_db):
     assert loaded.check_interval == 1
     assert loaded.check_interval_unit == "m"
     assert loaded.last_notified_status is None
+    assert loaded.last_alert_time is None
     assert loaded.blocked is None
     assert loaded.blocked_checked_at is None
     assert loaded.last_latency_ms is None
@@ -80,6 +81,7 @@ async def test_record_check_result_stores_metrics(node_db):
     assert result == (True, True, True)
 
     loaded = await get_node(node.id)
+    assert loaded.last_alert_time == checked_at
     assert loaded.last_latency_ms == 321
     assert loaded.last_error == "таймаут"
     assert loaded.consecutive_failures == 1
@@ -91,3 +93,31 @@ async def test_record_check_result_stores_metrics(node_db):
     assert loaded.last_latency_ms == 10
     assert loaded.last_error is None
     assert loaded.consecutive_failures == 0
+    assert loaded.last_alert_time is None
+
+
+async def test_record_check_result_throttles_repeated_down_alerts(node_db):
+    node = await add_node(name="alerts", ip="127.0.0.1", port=80, protocol="HTTP")
+    start = datetime(2026, 1, 1, 12, 0)
+
+    assert await record_check_result(node.id, False, start) == (True, True, True)
+    assert await record_check_result(node.id, False, start + timedelta(seconds=1)) == (
+        True,
+        False,
+        False,
+    )
+    repeat_at = start + timedelta(minutes=15)
+    assert await record_check_result(node.id, False, repeat_at) == (True, False, True)
+    assert (await get_node(node.id)).last_alert_time == repeat_at
+
+    recovered_at = start + timedelta(minutes=16)
+    assert await record_check_result(node.id, True, recovered_at) == (True, True, True)
+    assert (await get_node(node.id)).last_alert_time is None
+
+    down_at = start + timedelta(minutes=17)
+    assert await record_check_result(
+        node.id, False, down_at, alert_repeat_seconds=0
+    ) == (True, True, True)
+    assert await record_check_result(
+        node.id, False, down_at + timedelta(seconds=1), alert_repeat_seconds=0
+    ) == (True, False, True)

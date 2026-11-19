@@ -64,6 +64,16 @@ def test_extract_target():
     assert extract_target(Node(ip="", port=80, protocol="TCP")) is None
 
 
+async def test_refresh_blocked_escapes_invalid_target_error(node_db):
+    node = await add_node(name="<b>x</b>", ip="", port=80, protocol="HTTP")
+
+    blocked, changed, message = await refresh_node_blocked(node)
+
+    assert (blocked, changed) == (None, False)
+    assert "&lt;b&gt;x&lt;/b&gt;" in message
+    assert "<b>x</b>" not in message
+
+
 async def test_check_blocked_parses_api_response(monkeypatch):
     session, seen = fake_session({"blocked": True})
     monkeypatch.setattr(cheburcheck.aiohttp, "ClientSession", session)
