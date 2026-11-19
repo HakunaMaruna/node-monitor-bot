@@ -32,6 +32,7 @@ async def main() -> None:
         poll_tick_seconds=settings.POLL_TICK_SECONDS,
         summary_interval_hours=settings.SUMMARY_INTERVAL_HOURS,
         cheburcheck_interval_hours=settings.CHEBURCHECK_INTERVAL_HOURS,
+        cheburcheck_startup_delay_sec=settings.CHEBURCHECK_STARTUP_DELAY_SEC,
         cheburcheck_timeout_sec=settings.CHEBURCHECK_TIMEOUT_SEC,
         cheburcheck_delay_sec=settings.CHEBURCHECK_REQUEST_DELAY_SEC,
     )

@@ -38,6 +38,7 @@ SUMMARY_CHAT_ID=                 # оставь пустым, если свод�
 POLL_TICK_SECONDS=1              # как часто проверять расписание нод
 SUMMARY_INTERVAL_HOURS=1         # периодичность сводки
 CHEBURCHECK_INTERVAL_HOURS=6     # периодичность проверки блокировок
+CHEBURCHECK_STARTUP_DELAY_SEC=10 # первая проверка после старта бота
 CHEBURCHECK_TIMEOUT_SEC=10       # таймаут запроса к Cheburcheck
 CHEBURCHECK_REQUEST_DELAY_SEC=2.1 # пауза между нодами (лимит API ~30 req/min)
 ```
@@ -113,6 +114,7 @@ docker compose run --rm -v "$PWD:/backup" bot \
 | `POLL_TICK_SECONDS` | нет | `1` | частота опроса расписания проверок |
 | `SUMMARY_INTERVAL_HOURS` | нет | `1` | периодичность сводки |
 | `CHEBURCHECK_INTERVAL_HOURS` | нет | `6` | периодичность проверки Cheburcheck |
+| `CHEBURCHECK_STARTUP_DELAY_SEC` | нет | `10` | задержка первой проверки после старта |
 | `CHEBURCHECK_TIMEOUT_SEC` | нет | `10` | таймаут запроса к API |
 | `CHEBURCHECK_REQUEST_DELAY_SEC` | нет | `2.1` | пауза между нодами, чтобы не превысить лимит API |
 | `CHEBURCHECK_BASE_URL` | нет | `https://cheburcheck.ru/api/v1` | базовый адрес API Cheburcheck |

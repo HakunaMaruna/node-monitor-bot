@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timedelta
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramAPIError
@@ -26,6 +27,7 @@ class MonitorScheduler:
         poll_tick_seconds: int = 1,
         summary_interval_hours: int = 1,
         cheburcheck_interval_hours: int = settings.CHEBURCHECK_INTERVAL_HOURS,
+        cheburcheck_startup_delay_sec: int = settings.CHEBURCHECK_STARTUP_DELAY_SEC,
         cheburcheck_timeout_sec: int = settings.CHEBURCHECK_TIMEOUT_SEC,
         cheburcheck_delay_sec: float = settings.CHEBURCHECK_REQUEST_DELAY_SEC,
     ) -> None:
@@ -35,6 +37,7 @@ class MonitorScheduler:
         self.poll_tick_seconds = poll_tick_seconds
         self.summary_interval_hours = summary_interval_hours
         self.cheburcheck_interval_hours = cheburcheck_interval_hours
+        self.cheburcheck_startup_delay_sec = cheburcheck_startup_delay_sec
         self.cheburcheck_timeout_sec = cheburcheck_timeout_sec
         self.cheburcheck_delay_sec = cheburcheck_delay_sec
         self.scheduler = AsyncIOScheduler()
@@ -59,6 +62,8 @@ class MonitorScheduler:
         self.scheduler.add_job(
             self.check_cheburcheck,
             trigger=IntervalTrigger(hours=self.cheburcheck_interval_hours),
+            next_run_time=datetime.now(self.scheduler.timezone)
+            + timedelta(seconds=self.cheburcheck_startup_delay_sec),
             id="cheburcheck",
             replace_existing=True,
             max_instances=1,

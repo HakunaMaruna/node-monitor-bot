@@ -40,7 +40,9 @@ async def test_scheduler_sends_alerts_and_summaries(node_db, monkeypatch):
     scheduler.start()
     assert scheduler.scheduler.get_job("poll_nodes") is not None
     assert scheduler.scheduler.get_job("send_summary") is not None
-    assert scheduler.scheduler.get_job("cheburcheck") is not None
+    cheburcheck_job = scheduler.scheduler.get_job("cheburcheck")
+    assert cheburcheck_job is not None
+    assert cheburcheck_job.next_run_time is not None
     scheduler.stop()
     await asyncio.sleep(0)
     assert scheduler.scheduler.running is False
