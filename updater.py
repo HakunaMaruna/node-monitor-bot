@@ -84,6 +84,19 @@ def local_version(deploy_dir: Path) -> str:
     return version_file.read_text(encoding="utf-8").strip() if version_file.exists() else "0"
 
 
+def ensure_clean_worktree(config: UpdaterConfig) -> None:
+    status = run_command(
+        "git status --porcelain --untracked-files=no",
+        config.deploy_dir,
+    )
+    if status:
+        raise RuntimeError(
+            "В каталоге обновления есть незакоммиченные изменения. "
+            "Обновление остановлено, чтобы не потерять правки:\n"
+            f"{status[:2000]}"
+        )
+
+
 def parse_version(value: str) -> tuple[int, ...]:
     parts = tuple(int(part) for part in re.findall(r"\d+", value))
     return parts + (0,) * (3 - len(parts)) if len(parts) < 3 else parts
@@ -265,9 +278,16 @@ def rollback(config: UpdaterConfig, backup_path: Path) -> None:
 
 def perform_update(config: UpdaterConfig, version: str) -> None:
     tag = version if version.startswith("v") else f"v{version}"
+    ensure_clean_worktree(config)
     run_command(config.fetch_command, config.deploy_dir)
     run_command(f"git rev-parse --verify {shlex.quote(f'refs/tags/{tag}')}", config.deploy_dir)
     run_command(f"git checkout --force {shlex.quote(tag)}", config.deploy_dir)
+    checked = local_version(config.deploy_dir)
+    if parse_version(checked) != parse_version(tag):
+        raise RuntimeError(
+            f"После checkout {tag} в VERSION указана версия {checked}. "
+            "Обновление остановлено, чтобы не запустить чужой код."
+        )
     run_command(config.update_command, config.deploy_dir)
 
 
@@ -278,6 +298,12 @@ def update_flow(config: UpdaterConfig) -> bool:
         return False
     version = release.get("tag_name", "").strip()
     if not version or not is_newer(version, local):
+        return False
+
+    try:
+        ensure_clean_worktree(config)
+    except RuntimeError as exc:
+        send_message(config, f"Автообновление до {version} не запущено.\n{exc}")
         return False
 
     backup_path = create_backup(config, version)

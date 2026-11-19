@@ -34,9 +34,9 @@ Telegram-бот для периодической проверки нод (TCP/H
 ├── requirements.txt             зависимости (включая sqlalchemy[asyncio])
 ├── .dockerignore / Dockerfile / docker-compose.yml  контейнерный запуск
 ├── .github/workflows/docker-publish.yml  сборка и публикация образа в GHCR
-├── updater.py                   host-updater: GitHub Release → бэкап → Telegram → update → rollback
+├── updater.py                   host-updater: GitHub Release → проверка worktree/версии → бэкап → Telegram → update → rollback
 ├── deploy/                      примеры systemd unit/timer для updater
-├── VERSION                      текущая версия бота (1.5)
+├── VERSION                      текущая версия бота (1.6)
 ├── DOCKER.md                    подробная инструкция по Docker
 ├── UPDATES.md                   автообновление, бэкапы и откат
 └── README.md                    установка и команды бота
@@ -50,7 +50,7 @@ Telegram-бот для периодической проверки нод (TCP/H
 4. **Алерт:** DOWN — при смене статуса или не чаще одного раза в `ALERT_REPEAT_MINUTES`, UP — один раз при восстановлении (`last_notified_status`) с длительностью простоя → `services/notifier.py` → `ALERT_CHAT_ID` (или `ADMIN_ID`).
 5. **Cheburcheck:** раз в `CHEBURCHECK_INTERVAL_HOURS` (или кнопка в карточке) → `cheburcheck.refresh_nodes_blocked()` → `GET /api/v1/check?target=<host>` → `nodes.record_blocked_result()` → алерт при смене вердикта; шедулярный прогон дополнительно отправляет отчёт в `SUMMARY_CHAT_ID` (или `ADMIN_ID`).
 6. **Сводка:** по расписанию `send_summary()` → `utils.formatting.format_summary()` (счётчики Cheburcheck и средний uptime 24h) → `SUMMARY_CHAT_ID` (или `ADMIN_ID`).
-7. **Обновление:** `updater.py` на хосте → GitHub Release → архив кода/БД/`.env` → `sendDocument` в Telegram → `git checkout` + Docker Compose; при ошибке `rollback` из архива.
+7. **Обновление:** `updater.py` на хосте → GitHub Release → проверка чистого worktree → архив кода/БД/`.env` → `sendDocument` в Telegram → `git checkout` + проверка `VERSION` + Docker Compose; при ошибке `rollback` из архива.
 
 ## Запуск и проверки
 

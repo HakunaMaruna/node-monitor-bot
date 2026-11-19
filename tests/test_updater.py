@@ -152,6 +152,7 @@ def test_update_flow_sends_backup_before_notification_and_rolls_back(tmp_path, m
         "send_message",
         lambda config_arg, text: events.append(text),
     )
+    monkeypatch.setattr(updater, "ensure_clean_worktree", lambda config_arg: None)
 
     def failing_update(config_arg, version):
         events.append("update")
@@ -187,11 +188,38 @@ def test_update_flow_success(tmp_path, monkeypatch):
     monkeypatch.setattr(updater, "create_backup", lambda config_arg, version: backup)
     monkeypatch.setattr(updater, "send_backup", lambda config_arg, path, version: None)
     monkeypatch.setattr(updater, "send_message", lambda config_arg, text: messages.append(text))
+    monkeypatch.setattr(updater, "ensure_clean_worktree", lambda config_arg: None)
     monkeypatch.setattr(updater, "perform_update", lambda config_arg, version: None)
 
     assert updater.update_flow(config) is True
     assert "Начинаю автообновление" in messages[0]
     assert "обновлён до версии v1.1" in messages[1]
+
+
+def test_update_flow_aborts_on_dirty_worktree(tmp_path, monkeypatch):
+    config = make_config(tmp_path)
+    messages = []
+    called = []
+
+    monkeypatch.setattr(
+        updater,
+        "latest_release",
+        lambda config_arg: {"tag_name": "v1.1", "html_url": ""},
+    )
+    monkeypatch.setattr(updater, "send_message", lambda config_arg, text: messages.append(text))
+
+    def dirty(config_arg):
+        raise RuntimeError("есть правки")
+
+    monkeypatch.setattr(updater, "ensure_clean_worktree", dirty)
+    monkeypatch.setattr(
+        updater, "create_backup", lambda config_arg, version: called.append("backup")
+    )
+
+    assert updater.update_flow(config) is False
+    assert called == []
+    assert "не запущено" in messages[0]
+    assert "есть правки" in messages[0]
 
 
 def test_update_flow_skips_current_version(tmp_path, monkeypatch):
@@ -210,6 +238,64 @@ def test_update_flow_skips_current_version(tmp_path, monkeypatch):
 
     assert updater.update_flow(config) is False
     assert called == []
+
+
+def test_perform_update_checks_clean_tree_and_version(tmp_path, monkeypatch):
+    config = make_config(tmp_path)
+    seed_deploy(config)
+    commands = []
+
+    def fake_run(command, cwd):
+        commands.append(command)
+        if command.startswith("git checkout"):
+            (config.deploy_dir / "VERSION").write_text("1.1\n", encoding="utf-8")
+        return ""
+
+    monkeypatch.setattr(updater, "run_command", fake_run)
+
+    updater.perform_update(config, "v1.1")
+
+    assert commands == [
+        "git status --porcelain --untracked-files=no",
+        "fetch",
+        "git rev-parse --verify refs/tags/v1.1",
+        "git checkout --force v1.1",
+        "update",
+    ]
+
+
+def test_perform_update_rejects_dirty_worktree(tmp_path, monkeypatch):
+    config = make_config(tmp_path)
+    seed_deploy(config)
+    commands = []
+
+    monkeypatch.setattr(
+        updater,
+        "run_command",
+        lambda command, cwd: commands.append(command) or " M app/main.py",
+    )
+
+    with pytest.raises(RuntimeError, match="незакоммиченные изменения"):
+        updater.perform_update(config, "v1.1")
+
+    assert commands == ["git status --porcelain --untracked-files=no"]
+
+
+def test_perform_update_rejects_version_mismatch(tmp_path, monkeypatch):
+    config = make_config(tmp_path)
+    seed_deploy(config)
+    commands = []
+
+    monkeypatch.setattr(
+        updater,
+        "run_command",
+        lambda command, cwd: commands.append(command) or "",
+    )
+
+    with pytest.raises(RuntimeError, match="VERSION указана версия 1.0"):
+        updater.perform_update(config, "v1.1")
+
+    assert "update" not in commands
 
 
 def test_rollback_restores_and_restarts(tmp_path, monkeypatch):
