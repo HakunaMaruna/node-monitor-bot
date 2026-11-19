@@ -21,6 +21,7 @@ from app.utils.keyboards import (
     reply_menu,
     skip_choice,
 )
+from app.version import VERSION
 
 router = Router()
 STALE_MESSAGE_ERRORS = ("message is not modified", "message to edit not found")
@@ -28,6 +29,7 @@ STALE_MESSAGE_ERRORS = ("message is not modified", "message to edit not found")
 HELP_TEXT = (
     "Управление кнопками или командами:\n"
     "/start - меню\n"
+    "/version - версия бота\n"
     "/list - список нод\n"
     "/add - мастер добавления ноды\n"
     "/check [id] - проверить ноду или все включённые\n"
@@ -43,7 +45,9 @@ HELP_TEXT = (
 
 
 async def show_main(message: Message) -> None:
-    await message.answer("Мониторинг нод. Выберите действие:", reply_markup=main_inline())
+    await message.answer(
+        f"Мониторинг нод ver. {VERSION}. Выберите действие:", reply_markup=main_inline()
+    )
     await message.answer("Быстрые кнопки:", reply_markup=reply_menu())
 
 

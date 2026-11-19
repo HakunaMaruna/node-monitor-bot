@@ -8,6 +8,7 @@ Telegram-бот для периодической проверки нод (TCP/H
 /work
 ├── app/
 │   ├── main.py                  точка входа: БД, диспетчер (admin → menu → fallback), scheduler, polling
+│   ├── version.py               чтение версии из VERSION
 │   ├── config.py                настройки из .env (pydantic-settings)
 │   ├── database.py              async-движок SQLAlchemy, сессии, init_db()
 │   ├── models/node.py           модель Node (адрес, протокол, таймаут, интервал, статус, вердикт Cheburcheck)
@@ -25,24 +26,29 @@ Telegram-бот для периодической проверки нод (TCP/H
 │   ├── utils/formatting.py      форматирование статуса, карточки, алерта и сводки
 │   ├── utils/intervals.py       разбор и форматирование интервалов s/m/h
 │   └── utils/keyboards.py       reply/inline-клавиатуры меню, списка, карточки и мастеров
-├── tests/                       pytest: ping, CRUD, monitor, cheburcheck, scheduler, middleware, keyboards
+├── tests/                       pytest: ping, CRUD, monitor, cheburcheck, scheduler, updater, middleware, keyboards
 ├── conftest.py                  тестовые env-переменные и in-memory SQLite
 ├── .env.example                 шаблон переменных окружения
 ├── requirements.txt             зависимости (включая sqlalchemy[asyncio])
 ├── .dockerignore / Dockerfile / docker-compose.yml  контейнерный запуск
 ├── .github/workflows/docker-publish.yml  сборка и публикация образа в GHCR
+├── updater.py                   host-updater: GitHub Release → бэкап → Telegram → update → rollback
+├── deploy/                      примеры systemd unit/timer для updater
+├── VERSION                      текущая версия бота (1.0)
 ├── DOCKER.md                    подробная инструкция по Docker
+├── UPDATES.md                   автообновление, бэкапы и откат
 └── README.md                    установка и команды бота
 ```
 
 ## Потоки данных
 
 1. **Добавление ноды:** кнопка «Добавить ноду» или `/add` → FSM `AddNode` → `services/nodes.add_node()` → таблица `nodes`.
-2. **Навигация:** reply-кнопки и inline-меню → `handlers/menu.py` → карточка ноды/список/подтверждение удаления.
+2. **Навигация:** reply-кнопки и inline-меню → `handlers/menu.py` → карточка ноды/список/подтверждение удаления; `/version` → `app/version.py`.
 3. **Проверка:** `scheduler.poll_nodes()` по интервалу ноды, кнопка «Проверить» или `/check` → `monitor.check_node()` → `ping.PingService.check_node()` → `nodes.record_check_result()`.
 4. **Алерт:** DOWN — после каждой проверки по интервалу, UP — один раз при восстановлении (`last_notified_status`) → `services/notifier.py` → `ALERT_CHAT_ID` (или `ADMIN_ID`).
 5. **Cheburcheck:** раз в `CHEBURCHECK_INTERVAL_HOURS` (или кнопка в карточке) → `cheburcheck.refresh_nodes_blocked()` → `GET /api/v1/check?target=<host>` → `nodes.record_blocked_result()` → алерт при смене вердикта.
 6. **Сводка:** по расписанию `send_summary()` → `utils.formatting.format_summary()` (включая счётчики Cheburcheck) → `SUMMARY_CHAT_ID` (или `ADMIN_ID`).
+7. **Обновление:** `updater.py` на хосте → GitHub Release → архив кода/БД/`.env` → `sendDocument` в Telegram → `git checkout` + Docker Compose; при ошибке `rollback` из архива.
 
 ## Запуск и проверки
 

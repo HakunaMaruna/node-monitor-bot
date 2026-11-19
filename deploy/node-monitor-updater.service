@@ -1,0 +1,10 @@
+[Unit]
+Description=Node Monitor Bot updater
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/node-monitor-bot
+EnvironmentFile=/opt/node-monitor-bot/.env
+ExecStart=/usr/bin/python3 /opt/node-monitor-bot/updater.py update

@@ -8,6 +8,7 @@ from app.handlers import menu
 from app.services.cheburcheck import refresh_node_blocked
 from app.services.nodes import add_node, delete_node, get_node, list_nodes, set_enabled, set_interval
 from app.utils.formatting import format_node_card
+from app.version import VERSION
 from app.utils.intervals import format_interval, parse_interval
 
 router = Router()
@@ -24,6 +25,12 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
 async def cmd_help(message: Message, state: FSMContext) -> None:
     await state.clear()
     await menu.show_help(message)
+
+
+@router.message(Command("version"))
+async def cmd_version(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await message.answer(f"Node Monitor Bot ver. {VERSION}")
 
 
 @router.message(Command("add"))
