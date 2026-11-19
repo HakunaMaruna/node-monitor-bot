@@ -110,12 +110,13 @@ async def perform_checks(nodes, bot: Bot) -> str:
     results = []
     for node in nodes:
         status, _, should_notify = await check_node(node)
+        fresh = await get_node(node.id) or node
         if should_notify:
-            await send_status_alert(bot, node, status, settings.ALERT_CHAT_ID or settings.ADMIN_ID)
-        results.append(format_check_result(node, status))
+            await send_status_alert(bot, fresh, status, settings.ALERT_CHAT_ID or settings.ADMIN_ID)
+        results.append(format_check_result(fresh, status))
     if len(results) > MAX_LIST_ITEMS:
         results = results[:MAX_LIST_ITEMS] + [f"… и ещё {len(results) - MAX_LIST_ITEMS}"]
-    return "\n".join(results)
+    return "\n\n".join(results)
 
 
 async def start_add_flow(event: Message | CallbackQuery, state: FSMContext) -> None:

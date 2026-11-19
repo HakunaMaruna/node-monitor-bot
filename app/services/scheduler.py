@@ -11,7 +11,7 @@ from app.models.node import Node, naive_utcnow
 from app.services.cheburcheck import refresh_nodes_blocked
 from app.services.monitor import check_node
 from app.services.notifier import send_status_alert
-from app.services.nodes import list_nodes
+from app.services.nodes import get_node, list_nodes
 from app.utils.design import PARSE_MODE
 from app.utils.formatting import format_cheburcheck_report, format_summary
 
@@ -79,7 +79,8 @@ class MonitorScheduler:
     async def _check_node(self, node: Node) -> None:
         status, _, should_notify = await check_node(node)
         if should_notify:
-            await send_status_alert(self.bot, node, status, self.alert_chat_id)
+            fresh = await get_node(node.id) or node
+            await send_status_alert(self.bot, fresh, status, self.alert_chat_id)
 
     async def poll_nodes(self) -> None:
         now = naive_utcnow()

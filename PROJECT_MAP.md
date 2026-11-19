@@ -25,7 +25,7 @@ Telegram-бот для периодической проверки нод (TCP/H
 │   │   └── notifier.py          отправка алертов с подавлением ошибок Telegram
 │   ├── utils/design.py          иконки, HTML-экранирование, лимиты списков
 │   ├── utils/history.py         история проверок: 24ч окно, uptime, сериализация JSON
-│   ├── utils/formatting.py      форматирование карточки, алертов, сводки, меню и справки
+│   ├── utils/formatting.py      блочное форматирование карточки, алертов, сводки, отчётов Cheburcheck, меню и справки
 │   ├── utils/intervals.py       разбор и форматирование интервалов s/m/h
 │   └── utils/keyboards.py       reply/inline-клавиатуры, иконки и пагинация списка
 ├── tests/                       pytest: ping, CRUD, monitor, cheburcheck, scheduler, updater, middleware, keyboards, formatting, history
@@ -36,7 +36,7 @@ Telegram-бот для периодической проверки нод (TCP/H
 ├── .github/workflows/docker-publish.yml  сборка и публикация образа в GHCR
 ├── updater.py                   host-updater: GitHub Release → бэкап → Telegram → update → rollback
 ├── deploy/                      примеры systemd unit/timer для updater
-├── VERSION                      текущая версия бота (1.3)
+├── VERSION                      текущая версия бота (1.4)
 ├── DOCKER.md                    подробная инструкция по Docker
 ├── UPDATES.md                   автообновление, бэкапы и откат
 └── README.md                    установка и команды бота

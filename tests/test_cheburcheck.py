@@ -166,5 +166,6 @@ def test_summary_includes_cheburcheck_counts():
     assert "Не заблокировано: <b>1</b>" in text
     assert "Заблокировано: <b>1</b>" in text
     assert "Не проверялось: <b>1</b>" in text
-    assert "blocked · <code>one.example:80</code>" in text
+    assert "• <b>blocked</b>" in text
+    assert "🔗 <code>one.example:80</code>" in text
     assert "off" not in text

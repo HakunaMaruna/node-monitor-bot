@@ -7,6 +7,8 @@ from app.utils.formatting import (
     format_blocked_error,
     format_cheburcheck_report,
     format_check_result,
+    format_list_header,
+    format_main_menu,
     format_node_card,
     format_status_change,
     format_summary,
@@ -44,15 +46,22 @@ def test_node_card_has_icons_sections_and_relative_time():
     card = format_node_card(make_node(), now=NOW)
 
     assert "🟢 <b>Нода #1 · web</b>" in card
-    assert "🌐 HTTP · <code>http://example.com:80</code>" in card
-    assert "🟢 Доступна" in card
-    assert "⏱️ Интервал: <b>5m</b> · следующая проверка через 3 мин" in card
-    assert "🕒 Последняя проверка: 19.11 11:58 UTC · 2 мин назад" in card
-    assert "✅ Не заблокирована" in card
+    assert "🌐 Протокол: <b>HTTP</b>" in card
+    assert "🔗 Адрес: <code>http://example.com:80</code>" in card
+    assert "🟢 Статус: <b>Доступна</b>" in card
+    assert "⏱️ Интервал: <b>5m</b>" in card
+    assert "⏭️ Следующая проверка: <b>через 3 мин</b>" in card
+    assert "🕒 Последняя проверка: <b>2 мин назад</b>" in card
+    assert "📅 Точное время: <b>19.11 11:58 UTC</b>" in card
+    assert "✅ Вердикт: <b>Не заблокирована</b>" in card
+    assert "📅 Проверено: <b>19.11 11:30 UTC</b>" in card
+    assert "🕒 Когда: <b>30 мин назад</b>" in card
     assert "🔎 Ожидаемый ответ: <code>OK</code>" in card
     assert "⚡ Задержка: <b>42 мс</b>" in card
-    assert "📈 Uptime 24h: <b>нет данных</b> · —" in card
+    assert "📈 Uptime 24h: <b>нет данных</b>" in card
+    assert "📉 Последние проверки: <b>—</b>" in card
     assert "<b>СОСТОЯНИЕ</b>" in card
+    assert "<b>МЕТРИКИ</b>" in card
     assert "<b>CHEBURCHECK</b>" in card
     assert "<b>УПРАВЛЕНИЕ</b>" in card
 
@@ -71,11 +80,13 @@ def test_node_card_marks_disabled_and_hides_tcp_expected_response():
     )
 
     assert "⏸️ <b>Нода #1 · web</b>" in card
-    assert "⏸️ Отключена" in card
-    assert "🔌 TCP" in card
+    assert "⏸️ Статус: <b>Отключена</b>" in card
+    assert "🔌 Протокол: <b>TCP</b>" in card
+    assert "🔗 Адрес: <code>tcp://example.com:80</code>" in card
     assert "🔎 Ожидаемый ответ: не используется" in card
-    assert "⚪ Не проверялась" in card
-    assert "🕒 Проверено: — UTC · никогда" in card
+    assert "⚪ Вердикт: <b>Не проверялась</b>" in card
+    assert "📅 Проверено: <b>— UTC</b>" in card
+    assert "🕒 Когда: <b>никогда</b>" in card
 
 
 def test_node_card_escapes_html_from_names():
@@ -100,17 +111,38 @@ def test_node_card_shows_error_uptime_and_sparkline():
     card = format_node_card(node, now=NOW)
 
     assert "⚡ Задержка: <b>137 мс</b>" in card
-    assert "📈 Uptime 24h: <b>50.0%</b> · 🟢🔴" in card
+    assert "📈 Uptime 24h: <b>50.0%</b>" in card
+    assert "📉 Последние проверки: <b>🟢🔴</b>" in card
     assert "⚠️ Причина: <code>таймаут</code>" in card
     assert "🔁 Ошибок подряд: <b>1</b>" in card
 
 
 def test_check_result_and_alerts_use_russian_statuses():
     node = make_node(last_status=False)
+    alert = format_status_change(node, False)
 
-    assert "🔴 <b>#1 web</b> — Недоступна" in format_check_result(node, False)
-    assert "🔴 <b>НЕДОСТУПНА</b>" in format_status_change(node, False)
+    assert "🔴 <b>#1 web</b>" in format_check_result(node, False)
+    assert "📌 Статус: <b>Недоступна</b>" in format_check_result(node, False)
+    assert "🔴 <b>НОДА НЕДОСТУПНА</b>" in alert
+    assert "📌 Статус: <b>Недоступна</b>" in alert
+    assert "⚡ Задержка: <b>42 мс</b>" in alert
     assert "🚫 <b>CHEBURCHECK: ЗАБЛОКИРОВАНА</b>" in format_blocked_change(node, True)
+    assert "📌 Вердикт: <b>Заблокирована</b>" in format_blocked_change(node, True)
+
+
+def test_down_alert_shows_error_and_failure_count():
+    node = make_node(
+        last_status=False,
+        last_latency_ms=321,
+        last_error="соединение <сброшено>",
+        consecutive_failures=3,
+    )
+    alert = format_status_change(node, False)
+
+    assert "⚡ Задержка: <b>321 мс</b>" in alert
+    assert "⚠️ Причина: <code>соединение &lt;сброшено&gt;</code>" in alert
+    assert "🔁 Ошибок подряд: <b>3</b>" in alert
+    assert "<сброшено>" not in alert
 
 
 def test_cheburcheck_report_escapes_errors():
@@ -123,7 +155,9 @@ def test_cheburcheck_report_escapes_errors():
     report = format_cheburcheck_report([error])
 
     assert "<b>CHEBURCHECK: ОТЧЁТ</b>" in report
-    assert "• ⚠️ Cheburcheck" in report
+    assert "Проверено нод: <b>1</b>" in report
+    assert "⚠️ Ошибок: <b>1</b>" in report
+    assert "<b>1.</b> ⚠️ <b>CHEBURCHECK: ОШИБКА</b>" in report
     assert "Нет включённых нод" in format_cheburcheck_report([])
 
 
@@ -143,8 +177,20 @@ def test_summary_has_sections_and_no_disabled_nodes_in_lists():
     assert "Не заблокировано: <b>1</b>" in summary
     assert "Заблокировано: <b>1</b>" in summary
     assert "Не проверялось: <b>1</b>" in summary
-    assert "blocked · <code>example.com:80</code>" in summary
+    assert "• <b>blocked</b>" in summary
+    assert "🔗 <code>example.com:80</code>" in summary
     assert "off" not in summary
+
+
+def test_main_menu_and_list_header_use_separate_lines():
+    menu = format_main_menu(total=3, enabled=2, down=1)
+    header = format_list_header(total=45, enabled=40, page=1, pages=3)
+
+    assert "📌 Версия: <b>1.4</b>" in menu
+    assert "🖥️ Всего нод: <b>3</b>" in menu
+    assert "🟢 Активных: <b>2</b>" in menu
+    assert "🔴 Проблем: <b>1</b>" in menu
+    assert "📄 Страница: <b>2/3</b>" in header
 
 
 def test_summary_includes_average_uptime():

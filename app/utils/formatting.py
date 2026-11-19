@@ -38,6 +38,13 @@ def _relative(value: datetime | None, now: datetime) -> str:
     return f"{hours // 24} дн назад"
 
 
+def _node_address(node: Node, *, scheme: bool = False) -> str:
+    if not node.ip:
+        return "—"
+    prefix = f"{(node.protocol or '').lower()}://" if scheme else ""
+    return f"{prefix}{node.ip}:{node.port}"
+
+
 def format_sparkline(raw: str | None, limit: int = 20) -> str:
     items = decode_history(raw)[-limit:]
     if not items:
@@ -75,17 +82,22 @@ def format_node_card(node: Node, now: datetime | None = None) -> str:
         state_text = STATUS_TEXT[node.last_status]
     proto_icon = protocol_icon(node.protocol)
     protocol = (node.protocol or "").lower()
-    address = f"{protocol}://{node.ip}:{node.port}"
     interval = format_interval(node.check_interval, node.check_interval_unit)
+    latency = f"{node.last_latency_ms} мс" if node.last_latency_ms is not None else "—"
+    uptime = uptime_24h(node.check_history, current)
+    uptime_text = f"{uptime}%" if uptime is not None else "нет данных"
+
     lines = [
         f"{state_icon} <b>Нода #{node.id} · {esc(node.name)}</b>",
-        f"{proto_icon} {esc(node.protocol)} · <code>{esc(address)}</code>",
+        f"{proto_icon} Протокол: <b>{esc(node.protocol)}</b>",
+        f"{ICON['link']} Адрес: <code>{esc(_node_address(node, scheme=True))}</code>",
         "",
         f"{ICON['info']} <b>СОСТОЯНИЕ</b>",
-        f"{state_icon} {state_text}",
-        f"{ICON['clock']} Интервал: <b>{interval}</b> · следующая проверка {_next_check(node, current)}",
-        f"{ICON['history']} Последняя проверка: {_absolute(node.last_check_time)} UTC · "
-        f"{_relative(node.last_check_time, current)}",
+        f"{state_icon} Статус: <b>{state_text}</b>",
+        f"{ICON['clock']} Интервал: <b>{interval}</b>",
+        f"{ICON['skip']} Следующая проверка: <b>{_next_check(node, current)}</b>",
+        f"{ICON['history']} Последняя проверка: <b>{_relative(node.last_check_time, current)}</b>",
+        f"{ICON['calendar']} Точное время: <b>{_absolute(node.last_check_time)} UTC</b>",
         f"{ICON['settings']} Таймаут: <b>{node.timeout_sec} с</b>",
     ]
     if protocol in {"http", "https"} and node.expected_response:
@@ -95,12 +107,14 @@ def format_node_card(node: Node, now: datetime | None = None) -> str:
     else:
         lines.append(f"{ICON['search']} Ожидаемый ответ: не задан")
 
-    latency = f"{node.last_latency_ms} мс" if node.last_latency_ms is not None else "—"
-    uptime = uptime_24h(node.check_history, current)
-    uptime_text = f"{uptime}%" if uptime is not None else "нет данных"
-    lines.append(f"{ICON['latency']} Задержка: <b>{latency}</b>")
-    lines.append(
-        f"{ICON['trend']} Uptime 24h: <b>{uptime_text}</b> · {format_sparkline(node.check_history)}"
+    lines.extend(
+        [
+            "",
+            f"{ICON['trend']} <b>МЕТРИКИ</b>",
+            f"{ICON['latency']} Задержка: <b>{latency}</b>",
+            f"{ICON['trend']} Uptime 24h: <b>{uptime_text}</b>",
+            f"{ICON['chart']} Последние проверки: <b>{format_sparkline(node.check_history)}</b>",
+        ]
     )
     if node.last_error:
         lines.append(f"{ICON['warning']} Причина: <code>{esc(node.last_error)}</code>")
@@ -111,9 +125,9 @@ def format_node_card(node: Node, now: datetime | None = None) -> str:
         [
             "",
             f"{ICON['shield']} <b>CHEBURCHECK</b>",
-            f"{blocked_icon(node.blocked)} {BLOCKED_TEXT[node.blocked]}",
-            f"{ICON['history']} Проверено: {_absolute(node.blocked_checked_at)} UTC · "
-            f"{_relative(node.blocked_checked_at, current)}",
+            f"{blocked_icon(node.blocked)} Вердикт: <b>{BLOCKED_TEXT[node.blocked]}</b>",
+            f"{ICON['calendar']} Проверено: <b>{_absolute(node.blocked_checked_at)} UTC</b>",
+            f"{ICON['history']} Когда: <b>{_relative(node.blocked_checked_at, current)}</b>",
             "",
             f"{ICON['settings']} <b>УПРАВЛЕНИЕ</b>",
         ]
@@ -122,59 +136,103 @@ def format_node_card(node: Node, now: datetime | None = None) -> str:
 
 
 def format_check_result(node: Node, status: bool) -> str:
-    return (
-        f"{status_icon(status, node.enabled)} <b>#{node.id} {esc(node.name)}</b> — "
-        f"{STATUS_TEXT[status]}"
-    )
+    lines = [
+        f"{status_icon(status, node.enabled)} <b>#{node.id} {esc(node.name)}</b>",
+        f"{ICON['pin']} Статус: <b>{STATUS_TEXT[status]}</b>",
+        f"{protocol_icon(node.protocol)} Протокол: <b>{esc(node.protocol)}</b>",
+        f"{ICON['link']} Адрес: <code>{esc(_node_address(node))}</code>",
+    ]
+    if node.last_latency_ms is not None:
+        lines.append(f"{ICON['latency']} Задержка: <b>{node.last_latency_ms} мс</b>")
+    if not status and node.last_error:
+        lines.append(f"{ICON['warning']} Причина: <code>{esc(node.last_error)}</code>")
+    if not status and node.consecutive_failures:
+        lines.append(f"{ICON['repeat']} Ошибок подряд: <b>{node.consecutive_failures}</b>")
+    return "\n".join(lines)
 
 
 def format_status_change(node: Node, status: bool) -> str:
-    title = "ДОСТУПНА" if status else "НЕДОСТУПНА"
-    return (
-        f"{status_icon(status)} <b>{title}</b>\n"
-        f"{protocol_icon(node.protocol)} <b>{esc(node.name)}</b> · "
-        f"<code>{esc(node.ip)}:{node.port}</code>\n"
-        f"{ICON['history']} Проверка: {_absolute(naive_utcnow())} UTC"
-    )
+    title = "НОДА ВОССТАНОВЛЕНА" if status else "НОДА НЕДОСТУПНА"
+    lines = [
+        f"{status_icon(status)} <b>{title}</b>",
+        f"{ICON['node']} Нода: <b>#{node.id} {esc(node.name)}</b>",
+        f"{protocol_icon(node.protocol)} Протокол: <b>{esc(node.protocol)}</b>",
+        f"{ICON['link']} Адрес: <code>{esc(_node_address(node))}</code>",
+        f"{ICON['pin']} Статус: <b>{STATUS_TEXT[status]}</b>",
+    ]
+    if node.last_latency_ms is not None:
+        lines.append(f"{ICON['latency']} Задержка: <b>{node.last_latency_ms} мс</b>")
+    if not status and node.last_error:
+        lines.append(f"{ICON['warning']} Причина: <code>{esc(node.last_error)}</code>")
+    if not status and node.consecutive_failures:
+        lines.append(f"{ICON['repeat']} Ошибок подряд: <b>{node.consecutive_failures}</b>")
+    lines.append(f"{ICON['calendar']} Проверка: <b>{_absolute(naive_utcnow())} UTC</b>")
+    return "\n".join(lines)
 
 
 def format_blocked_error(node: Node, reason: str) -> str:
-    return (
-        f"{ICON['warning']} Cheburcheck · <b>#{node.id} {esc(node.name)}</b> — "
-        f"{esc(reason)}"
+    return "\n".join(
+        [
+            f"{ICON['warning']} <b>CHEBURCHECK: ОШИБКА</b>",
+            f"{ICON['node']} Нода: <b>#{node.id} {esc(node.name)}</b>",
+            f"{ICON['link']} Адрес: <code>{esc(_node_address(node))}</code>",
+            f"{ICON['pin']} Причина: <code>{esc(reason)}</code>",
+        ]
     )
 
 
 def format_blocked_verdict(node: Node, blocked: bool | None) -> str:
-    return (
-        f"{ICON['shield']} Cheburcheck · <b>{esc(node.name)}</b> — "
-        f"{blocked_icon(blocked)} {BLOCKED_TEXT[blocked]}"
+    current = naive_utcnow()
+    return "\n".join(
+        [
+            f"{ICON['shield']} <b>CHEBURCHECK</b>",
+            f"{ICON['node']} Нода: <b>#{node.id} {esc(node.name)}</b>",
+            f"{ICON['link']} Адрес: <code>{esc(_node_address(node))}</code>",
+            f"{blocked_icon(blocked)} Вердикт: <b>{BLOCKED_TEXT[blocked]}</b>",
+            f"{ICON['calendar']} Проверено: <b>{_absolute(node.blocked_checked_at)} UTC</b>",
+            f"{ICON['history']} Когда: <b>{_relative(node.blocked_checked_at, current)}</b>",
+        ]
     )
 
 
 def format_blocked_change(node: Node, blocked: bool) -> str:
     title = "ЗАБЛОКИРОВАНА" if blocked else "НЕ ЗАБЛОКИРОВАНА"
-    return (
-        f"{blocked_icon(blocked)} <b>CHEBURCHECK: {title}</b>\n"
-        f"<b>{esc(node.name)}</b> · <code>{esc(node.ip)}:{node.port}</code>"
+    current = naive_utcnow()
+    return "\n".join(
+        [
+            f"{blocked_icon(blocked)} <b>CHEBURCHECK: {title}</b>",
+            f"{ICON['node']} Нода: <b>#{node.id} {esc(node.name)}</b>",
+            f"{ICON['link']} Адрес: <code>{esc(_node_address(node))}</code>",
+            f"{ICON['pin']} Вердикт: <b>{BLOCKED_TEXT[blocked]}</b>",
+            f"{ICON['calendar']} Проверено: <b>{_absolute(node.blocked_checked_at)} UTC</b>",
+            f"{ICON['history']} Когда: <b>{_relative(node.blocked_checked_at, current)}</b>",
+        ]
     )
 
 
 def format_main_menu(total: int, enabled: int, down: int) -> str:
-    return (
-        f"{ICON['node']} <b>МОНИТОРИНГ НОД</b> · ver. {VERSION}\n"
-        f"{ICON['info']} Всего: <b>{total}</b> · активных: <b>{enabled}</b> · "
-        f"проблем: <b>{down}</b>\n\n"
-        "Выберите действие:"
+    return "\n".join(
+        [
+            f"{ICON['node']} <b>МОНИТОРИНГ НОД</b>",
+            f"{ICON['pin']} Версия: <b>{VERSION}</b>",
+            f"{ICON['node']} Всего нод: <b>{total}</b>",
+            f"{ICON['up']} Активных: <b>{enabled}</b>",
+            f"{ICON['down']} Проблем: <b>{down}</b>",
+            "",
+            "Выберите действие:",
+        ]
     )
 
 
 def format_list_header(total: int, enabled: int, page: int, pages: int) -> str:
-    suffix = f" · стр. {page + 1}/{pages}" if pages > 1 else ""
-    return (
-        f"{ICON['list']} <b>СПИСОК НОД</b>\n"
-        f"Всего: <b>{total}</b> · активных: <b>{enabled}</b>{suffix}"
-    )
+    lines = [
+        f"{ICON['list']} <b>СПИСОК НОД</b>",
+        f"{ICON['node']} Всего нод: <b>{total}</b>",
+        f"{ICON['up']} Активных: <b>{enabled}</b>",
+    ]
+    if pages > 1:
+        lines.append(f"{ICON['page']} Страница: <b>{page + 1}/{pages}</b>")
+    return "\n".join(lines)
 
 
 def format_help(poll_tick_seconds: int, summary_hours: int, cheburcheck_hours: int) -> str:
@@ -204,12 +262,42 @@ def _limited(items: list[str]) -> list[str]:
     return items[:MAX_LIST_ITEMS] + [f"… и ещё {len(items) - MAX_LIST_ITEMS}"]
 
 
+def _node_block(node: Node) -> str:
+    return (
+        f"• <b>{esc(node.name)}</b>\n"
+        f"  {ICON['link']} <code>{esc(_node_address(node))}</code>"
+    )
+
+
 def format_cheburcheck_report(results: list[str]) -> str:
     lines = [f"{ICON['shield']} <b>CHEBURCHECK: ОТЧЁТ</b>"]
     if not results:
         lines.append(f"{ICON['info']} Нет включённых нод")
         return "\n".join(lines)
-    lines.extend(f"• {item}" for item in _limited(results))
+
+    blocked_count = sum(
+        1 for item in results if f"Вердикт: <b>{BLOCKED_TEXT[True]}</b>" in item
+    )
+    error_count = sum(1 for item in results if "CHEBURCHECK: ОШИБКА" in item)
+    clean_count = sum(
+        1 for item in results if f"Вердикт: <b>{BLOCKED_TEXT[False]}</b>" in item
+    )
+    lines.extend(
+        [
+            f"{ICON['list']} Проверено нод: <b>{len(results)}</b>",
+            f"{ICON['ok']} Чисто: <b>{clean_count}</b>",
+            f"{ICON['blocked']} Заблокировано: <b>{blocked_count}</b>",
+            f"{ICON['warning']} Ошибок: <b>{error_count}</b>",
+            "",
+        ]
+    )
+    for index, item in enumerate(_limited(results), 1):
+        if item.startswith("…"):
+            lines.append(item)
+        else:
+            lines.append(f"<b>{index}.</b> {item}")
+        lines.append("")
+    lines.pop()
     return "\n".join(lines)
 
 
@@ -222,7 +310,8 @@ def format_summary(nodes: list[Node]) -> str:
     unchecked = len(enabled) - len(blocked) - len(clean)
     lines = [
         f"{ICON['info']} <b>СВОДКА ПО НОДАМ</b>",
-        f"Всего: <b>{len(nodes)}</b> · активных: <b>{len(enabled)}</b>",
+        f"{ICON['node']} Всего нод: <b>{len(nodes)}</b>",
+        f"{ICON['up']} Активных: <b>{len(enabled)}</b>",
         "",
         f"{ICON['up']} <b>ДОСТУПНОСТЬ</b>",
         f"{ICON['up']} В сети: <b>{len(up)}</b>",
@@ -250,13 +339,11 @@ def format_summary(nodes: list[Node]) -> str:
     if blocked:
         lines.extend(["", f"{ICON['blocked']} <b>ЗАБЛОКИРОВАННЫЕ</b>"])
         lines.extend(
-            f"• {esc(node.name)} · <code>{esc(node.ip)}:{node.port}</code>"
-            for node in _limited(blocked)
+            _node_block(node) for node in _limited(blocked)
         )
     if down:
         lines.extend(["", f"{ICON['down']} <b>ПРОБЛЕМЫ</b>"])
         lines.extend(
-            f"• {esc(node.name)} · <code>{esc(node.ip)}:{node.port}</code>"
-            for node in _limited(down)
+            _node_block(node) for node in _limited(down)
         )
     return "\n".join(lines)

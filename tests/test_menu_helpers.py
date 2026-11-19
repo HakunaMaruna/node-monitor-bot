@@ -50,6 +50,11 @@ async def test_perform_checks_continues_after_alert_error(monkeypatch):
 
     monkeypatch.setattr("app.handlers.menu.check_node", fake_check)
 
+    async def fake_get_node(node_id):
+        return next(node for node in nodes if node.id == node_id)
+
+    monkeypatch.setattr("app.handlers.menu.get_node", fake_get_node)
+
     class FailingBot:
         def __init__(self):
             self.messages = []

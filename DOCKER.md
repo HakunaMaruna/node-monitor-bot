@@ -131,4 +131,4 @@ docker compose run --rm -v "$PWD:/backup" bot \
 
 ## 9. Автообновление
 
-Updater работает на хосте, а не внутри контейнера. Инструкция по GitHub Release, бэкапам, отправке архива в Telegram и откату: [UPDATES.md](UPDATES.md). Текущая версия бота — `ver. 1.3`, она доступна по команде `/version`.
+Updater работает на хосте, а не внутри контейнера. Инструкция по GitHub Release, бэкапам, отправке архива в Telegram и откату: [UPDATES.md](UPDATES.md). Текущая версия бота — `ver. 1.4`, она доступна по команде `/version`.

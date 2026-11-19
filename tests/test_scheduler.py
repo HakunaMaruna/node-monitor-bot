@@ -4,7 +4,7 @@ from datetime import datetime
 from aiogram.exceptions import TelegramAPIError
 from aiogram.methods import AnswerCallbackQuery
 
-from app.services.nodes import add_node, update_node_status
+from app.services.nodes import add_node, record_check_result, update_node_status
 from app.services.scheduler import MonitorScheduler
 
 
@@ -46,6 +46,30 @@ async def test_scheduler_sends_alerts_and_summaries(node_db, monkeypatch):
     scheduler.stop()
     await asyncio.sleep(0)
     assert scheduler.scheduler.running is False
+
+
+async def test_scheduler_alert_uses_fresh_check_metrics(node_db, monkeypatch):
+    node = await add_node(name="metrics", ip="10.0.0.1", port=80, protocol="HTTP")
+
+    async def fake_check(candidate):
+        await record_check_result(
+            candidate.id,
+            False,
+            datetime(2026, 1, 1, 12, 0),
+            latency_ms=99,
+            error="таймаут",
+        )
+        return False, True, True
+
+    monkeypatch.setattr("app.services.scheduler.check_node", fake_check)
+    bot = FakeBot()
+    scheduler = MonitorScheduler(bot, alert_chat_id=100, summary_chat_id=200)
+
+    await scheduler.check_all()
+
+    assert "99 мс" in bot.messages[0][1]
+    assert "таймаут" in bot.messages[0][1]
+    assert "Ошибок подряд: <b>1</b>" in bot.messages[0][1]
 
 
 async def test_scheduler_continues_after_alert_error(node_db, monkeypatch):
@@ -124,7 +148,7 @@ async def test_scheduler_runs_cheburcheck_for_enabled_nodes(node_db, monkeypatch
     assert await scheduler.check_cheburcheck() == ["ok"]
     assert bot.messages[-1][0] == 200
     assert "CHEBURCHECK: ОТЧЁТ" in bot.messages[-1][1]
-    assert "• ok" in bot.messages[-1][1]
+    assert "<b>1.</b> ok" in bot.messages[-1][1]
     assert seen["ids"] == [node.id]
     assert seen["kwargs"]["alert_chat_id"] == 100
     assert seen["kwargs"]["delay_sec"] == 0

@@ -1,6 +1,6 @@
 # Автообновление Node Monitor Bot
 
-Текущая версия бота — `ver. 1.3`, она зафиксирована в файле `VERSION` и git-теге `v1.3`.
+Текущая версия бота — `ver. 1.4`, она зафиксирована в файле `VERSION` и git-теге `v1.4`.
 
 Обновление выполняется отдельным скриптом на хосте: `updater.py`. Он не обновляет работающий контейнер изнутри, а управляет репозиторием и Docker Compose снаружи.
 
@@ -78,11 +78,11 @@ journalctl -u node-monitor-updater.service -f
 
 ```bash
 cd /opt/node-monitor-bot
-python3 updater.py rollback backups/node-monitor-backup-v1.3-20261119T120000Z.tar.gz
+python3 updater.py rollback backups/node-monitor-backup-v1.4-20261119T120000Z.tar.gz
 ```
 
 Команда останавливает контейнеры, восстанавливает файлы из архива, пересобирает образ из восстановленного кода и отправляет уведомление в Telegram.
 
 ## Проверка версии в боте
 
-`/version` — показывает текущую версию, например `Node Monitor Bot ver. 1.3`.
+`/version` — показывает текущую версию, например `Node Monitor Bot ver. 1.4`.

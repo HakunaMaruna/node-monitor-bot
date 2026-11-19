@@ -7,7 +7,7 @@ from yarl import URL
 from app.config import settings
 from app.models.node import Node, naive_utcnow
 from app.services.notifier import send_blocked_alert
-from app.services.nodes import record_blocked_result
+from app.services.nodes import get_node, record_blocked_result
 from app.services.ping import split_host_and_port
 from app.utils.formatting import format_blocked_error, format_blocked_verdict
 
@@ -86,10 +86,11 @@ async def refresh_node_blocked(
     if not exists:
         return None, False, format_blocked_error(node, "нода не найдена")
 
+    fresh = await get_node(node.id) or node
     if changed and bot is not None and alert_chat_id is not None:
-        await send_blocked_alert(bot, node, blocked, alert_chat_id)
+        await send_blocked_alert(bot, fresh, blocked, alert_chat_id)
 
-    return blocked, changed, format_blocked_verdict(node, blocked)
+    return blocked, changed, format_blocked_verdict(fresh, blocked)
 
 
 async def refresh_nodes_blocked(
