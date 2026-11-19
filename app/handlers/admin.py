@@ -1,3 +1,4 @@
+import asyncio
 from aiogram import Bot, Router
 from aiogram.filters import Command, CommandObject
 from aiogram.fsm.context import FSMContext
@@ -73,6 +74,13 @@ async def cmd_add(message: Message, command: CommandObject, state: FSMContext) -
     )
     await message.answer(
         f"✅ Нода #{node.id} добавлена.\n{format_node_card(node)}", parse_mode=PARSE_MODE
+    )
+    asyncio.create_task(
+        refresh_node_blocked(
+            node,
+            bot=message.bot,
+            alert_chat_id=settings.ALERT_CHAT_ID or settings.ADMIN_ID,
+        )
     )
 
 

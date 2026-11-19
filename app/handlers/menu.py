@@ -1,3 +1,4 @@
+import asyncio
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
@@ -410,6 +411,15 @@ async def finish_add(event: Message | CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     text = f"✅ Нода #{node.id} добавлена.\n{format_node_card(node)}"
     await render(event, text, node_actions(node))
+    bot = getattr(event, "bot", None)
+    if bot is not None:
+        asyncio.create_task(
+            refresh_node_blocked(
+                node,
+                bot=bot,
+                alert_chat_id=settings.ALERT_CHAT_ID or settings.ADMIN_ID,
+            )
+        )
 
 
 @router.message(SetInterval.value)

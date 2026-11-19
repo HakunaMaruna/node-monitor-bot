@@ -152,6 +152,7 @@ def format_node_card(node: Node, now: datetime | None = None) -> str:
             "",
             f"{ICON['shield']} <b>CHEBURCHECK</b>",
             f"{blocked_icon(node.blocked)} Вердикт: <b>{BLOCKED_TEXT[node.blocked]}</b>",
+            f"{ICON['shield']} ТСПУ: <b>{BLOCKED_TEXT[node.blocked]}</b>",
             f"{ICON['calendar']} Проверено: <b>{_absolute(node.blocked_checked_at)} UTC</b>",
             f"{ICON['history']} Когда: <b>{_relative(node.blocked_checked_at, current)}</b>",
             "",
