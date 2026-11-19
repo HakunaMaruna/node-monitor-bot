@@ -5,7 +5,9 @@ from aiogram.exceptions import TelegramAPIError
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
+from app.config import settings
 from app.models.node import Node, naive_utcnow
+from app.services.cheburcheck import refresh_nodes_blocked
 from app.services.monitor import check_node
 from app.services.notifier import send_status_alert
 from app.services.nodes import list_nodes
@@ -23,12 +25,18 @@ class MonitorScheduler:
         summary_chat_id: int,
         poll_tick_seconds: int = 1,
         summary_interval_hours: int = 1,
+        cheburcheck_interval_hours: int = settings.CHEBURCHECK_INTERVAL_HOURS,
+        cheburcheck_timeout_sec: int = settings.CHEBURCHECK_TIMEOUT_SEC,
+        cheburcheck_delay_sec: float = settings.CHEBURCHECK_REQUEST_DELAY_SEC,
     ) -> None:
         self.bot = bot
         self.alert_chat_id = alert_chat_id
         self.summary_chat_id = summary_chat_id
         self.poll_tick_seconds = poll_tick_seconds
         self.summary_interval_hours = summary_interval_hours
+        self.cheburcheck_interval_hours = cheburcheck_interval_hours
+        self.cheburcheck_timeout_sec = cheburcheck_timeout_sec
+        self.cheburcheck_delay_sec = cheburcheck_delay_sec
         self.scheduler = AsyncIOScheduler()
 
     def start(self) -> None:
@@ -44,6 +52,14 @@ class MonitorScheduler:
             self.send_summary,
             trigger=IntervalTrigger(hours=self.summary_interval_hours),
             id="send_summary",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+        )
+        self.scheduler.add_job(
+            self.check_cheburcheck,
+            trigger=IntervalTrigger(hours=self.cheburcheck_interval_hours),
+            id="cheburcheck",
             replace_existing=True,
             max_instances=1,
             coalesce=True,
@@ -71,6 +87,16 @@ class MonitorScheduler:
     async def check_all(self) -> None:
         for node in await list_nodes(enabled_only=True):
             await self._check_node(node)
+
+    async def check_cheburcheck(self, nodes: list[Node] | None = None) -> list[str]:
+        targets = nodes if nodes is not None else await list_nodes(enabled_only=True)
+        return await refresh_nodes_blocked(
+            targets,
+            bot=self.bot,
+            alert_chat_id=self.alert_chat_id,
+            timeout_sec=self.cheburcheck_timeout_sec,
+            delay_sec=self.cheburcheck_delay_sec,
+        )
 
     async def send_summary(self) -> None:
         nodes = await list_nodes()

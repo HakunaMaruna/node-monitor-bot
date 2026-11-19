@@ -55,6 +55,11 @@ def node_actions(node: Node) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="Проверить", callback_data=f"check:{node.id}")],
+            [
+                InlineKeyboardButton(
+                    text="Cheburcheck: проверить", callback_data=f"blocked:{node.id}"
+                )
+            ],
             [InlineKeyboardButton(text=toggle, callback_data=f"toggle:{node.id}")],
             [InlineKeyboardButton(text="Интервал", callback_data=f"interval:{node.id}")],
             [InlineKeyboardButton(text="Удалить", callback_data=f"delete:{node.id}")],

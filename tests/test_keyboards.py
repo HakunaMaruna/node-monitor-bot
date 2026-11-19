@@ -39,6 +39,7 @@ def test_node_actions_toggle_label():
     disabled = Node(id=1, name="a", ip="1.1.1.1", port=1, protocol="TCP", enabled=False)
     assert "toggle:1" in inline_data(node_actions(enabled))
     assert "interval:1" in inline_data(node_actions(enabled))
+    assert "blocked:1" in inline_data(node_actions(enabled))
     labels = [button.text for row in node_actions(enabled).inline_keyboard for button in row]
     assert "Выключить" in labels
     labels = [button.text for row in node_actions(disabled).inline_keyboard for button in row]

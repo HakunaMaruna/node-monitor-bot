@@ -12,6 +12,10 @@ class Settings(BaseSettings):
 
     POLL_TICK_SECONDS: int = Field(default=1, gt=0)
     SUMMARY_INTERVAL_HOURS: int = Field(default=1, gt=0)
+    CHEBURCHECK_INTERVAL_HOURS: int = Field(default=6, gt=0)
+    CHEBURCHECK_TIMEOUT_SEC: int = Field(default=10, gt=0)
+    CHEBURCHECK_REQUEST_DELAY_SEC: float = Field(default=2.1, gt=0)
+    CHEBURCHECK_BASE_URL: str = "https://cheburcheck.ru/api/v1"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

@@ -5,6 +5,7 @@ from app.services.nodes import (
     delete_node,
     get_node,
     list_nodes,
+    record_blocked_result,
     set_enabled,
     set_interval,
     update_node_status,
@@ -40,6 +41,17 @@ async def test_node_crud(node_db):
     assert loaded.check_interval == 1
     assert loaded.check_interval_unit == "m"
     assert loaded.last_notified_status is None
+    assert loaded.blocked is None
+    assert loaded.blocked_checked_at is None
+
+    checked_block = datetime(2026, 1, 1, 13, 0)
+    exists, changed = await record_blocked_result(node.id, True, checked_block)
+    assert (exists, changed) == (True, True)
+    loaded = await get_node(node.id)
+    assert loaded.blocked is True
+    assert loaded.blocked_checked_at == checked_block
+    assert await record_blocked_result(node.id, True, checked_block) == (True, False)
+    assert await record_blocked_result(999, True, checked_block) == (False, False)
 
     assert await set_interval(node.id, 2, "h") is True
     loaded = await get_node(node.id)

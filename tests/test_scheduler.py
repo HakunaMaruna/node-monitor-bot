@@ -40,6 +40,7 @@ async def test_scheduler_sends_alerts_and_summaries(node_db, monkeypatch):
     scheduler.start()
     assert scheduler.scheduler.get_job("poll_nodes") is not None
     assert scheduler.scheduler.get_job("send_summary") is not None
+    assert scheduler.scheduler.get_job("cheburcheck") is not None
     scheduler.stop()
     await asyncio.sleep(0)
     assert scheduler.scheduler.running is False
@@ -98,3 +99,26 @@ async def test_poll_nodes_respects_node_interval(node_db, monkeypatch):
 
     assert checked == [due.id]
     assert slow.id not in checked
+
+
+async def test_scheduler_runs_cheburcheck_for_enabled_nodes(node_db, monkeypatch):
+    node = await add_node(name="site", ip="example.com", port=443, protocol="HTTPS")
+    seen = {}
+
+    async def fake_refresh(nodes, **kwargs):
+        seen["ids"] = [candidate.id for candidate in nodes]
+        seen["kwargs"] = kwargs
+        return ["ok"]
+
+    monkeypatch.setattr("app.services.scheduler.refresh_nodes_blocked", fake_refresh)
+
+    scheduler = MonitorScheduler(
+        FakeBot(),
+        alert_chat_id=100,
+        summary_chat_id=200,
+        cheburcheck_delay_sec=0,
+    )
+    assert await scheduler.check_cheburcheck() == ["ok"]
+    assert seen["ids"] == [node.id]
+    assert seen["kwargs"]["alert_chat_id"] == 100
+    assert seen["kwargs"]["delay_sec"] == 0

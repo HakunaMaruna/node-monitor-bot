@@ -37,6 +37,9 @@ ALERT_CHAT_ID=                   # оставь пустым, если алер�
 SUMMARY_CHAT_ID=                 # оставь пустым, если сводка в ADMIN_ID
 POLL_TICK_SECONDS=1              # как часто проверять расписание нод
 SUMMARY_INTERVAL_HOURS=1         # периодичность сводки
+CHEBURCHECK_INTERVAL_HOURS=6     # периодичность проверки блокировок
+CHEBURCHECK_TIMEOUT_SEC=10       # таймаут запроса к Cheburcheck
+CHEBURCHECK_REQUEST_DELAY_SEC=2.1 # пауза между нодами (лимит API ~30 req/min)
 ```
 
 `DB_URL` в `.env` можно не трогать: `docker-compose.yml` сам задаёт путь
@@ -109,6 +112,10 @@ docker compose run --rm -v "$PWD:/backup" bot \
 | `SUMMARY_CHAT_ID` | нет | `ADMIN_ID` | чат для периодической сводки |
 | `POLL_TICK_SECONDS` | нет | `1` | частота опроса расписания проверок |
 | `SUMMARY_INTERVAL_HOURS` | нет | `1` | периодичность сводки |
+| `CHEBURCHECK_INTERVAL_HOURS` | нет | `6` | периодичность проверки Cheburcheck |
+| `CHEBURCHECK_TIMEOUT_SEC` | нет | `10` | таймаут запроса к API |
+| `CHEBURCHECK_REQUEST_DELAY_SEC` | нет | `2.1` | пауза между нодами, чтобы не превысить лимит API |
+| `CHEBURCHECK_BASE_URL` | нет | `https://cheburcheck.ru/api/v1` | базовый адрес API Cheburcheck |
 | `DB_URL` | нет | `sqlite+aiosqlite:///./nodes.db` | URL базы (в Compose переопределён) |
 
 ## 8. Частые проблемы

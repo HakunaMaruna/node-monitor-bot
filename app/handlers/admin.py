@@ -3,7 +3,9 @@ from aiogram.filters import Command, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
+from app.config import settings
 from app.handlers import menu
+from app.services.cheburcheck import refresh_node_blocked
 from app.services.nodes import add_node, delete_node, get_node, list_nodes, set_enabled, set_interval
 from app.utils.formatting import format_node_card
 from app.utils.intervals import format_interval, parse_interval
@@ -119,6 +121,28 @@ async def cmd_check(message: Message, command: CommandObject, state: FSMContext,
             return
 
     await message.answer(await menu.perform_checks(nodes, bot))
+
+
+@router.message(Command("blocked"))
+async def cmd_check_blocked(
+    message: Message, command: CommandObject, state: FSMContext, bot: Bot
+) -> None:
+    await state.clear()
+    node_id = parse_id(command.args)
+    if node_id is None:
+        await message.answer("Формат: /blocked <id>")
+        return
+    node = await get_node(node_id)
+    if node is None:
+        await message.answer(f"Нода #{node_id} не найдена.")
+        return
+    _, _, verdict = await refresh_node_blocked(
+        node,
+        bot=bot,
+        alert_chat_id=settings.ALERT_CHAT_ID or settings.ADMIN_ID,
+    )
+    updated = await get_node(node_id)
+    await message.answer(f"{verdict}\n\n{format_node_card(updated)}", reply_markup=menu.node_actions(updated))
 
 
 @router.message(Command("interval"))

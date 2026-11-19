@@ -31,6 +31,9 @@ async def main() -> None:
         summary_chat_id=settings.SUMMARY_CHAT_ID or settings.ADMIN_ID,
         poll_tick_seconds=settings.POLL_TICK_SECONDS,
         summary_interval_hours=settings.SUMMARY_INTERVAL_HOURS,
+        cheburcheck_interval_hours=settings.CHEBURCHECK_INTERVAL_HOURS,
+        cheburcheck_timeout_sec=settings.CHEBURCHECK_TIMEOUT_SEC,
+        cheburcheck_delay_sec=settings.CHEBURCHECK_REQUEST_DELAY_SEC,
     )
     scheduler.start()
 

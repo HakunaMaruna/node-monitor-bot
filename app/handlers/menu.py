@@ -5,6 +5,7 @@ from aiogram.types import CallbackQuery, Message
 
 from app.config import settings
 from app.handlers.states import AddNode, SetInterval
+from app.services.cheburcheck import refresh_node_blocked
 from app.services.monitor import check_node
 from app.services.notifier import send_status_alert
 from app.services.nodes import add_node, delete_node, get_node, list_nodes, set_enabled, set_interval
@@ -30,11 +31,14 @@ HELP_TEXT = (
     "/list - список нод\n"
     "/add - мастер добавления ноды\n"
     "/check [id] - проверить ноду или все включённые\n"
+    "/blocked <id> - проверить ноду через Cheburcheck\n"
     "/remove <id> - удалить ноду\n"
     "/enable <id>, /disable <id> - переключатель проверки\n"
     "/interval <id> <30s|5m|2h> - интервал опроса ноды\n"
     f"Опрос запускается каждые {settings.POLL_TICK_SECONDS} с, "
-    f"сводка раз в {settings.SUMMARY_INTERVAL_HOURS} ч"
+    f"сводка раз в {settings.SUMMARY_INTERVAL_HOURS} ч, "
+    f"Cheburcheck раз в {settings.CHEBURCHECK_INTERVAL_HOURS} ч "
+    "(кнопка в карточке ноды)"
 )
 
 
@@ -205,6 +209,26 @@ async def cb_check_node(callback: CallbackQuery, bot: Bot) -> None:
         await edit_message(callback, "Нода не найдена.", main_inline())
         return
     await edit_message(callback, f"{text}\n\n{format_node_card(updated)}", node_actions(updated))
+
+
+@router.callback_query(F.data.startswith("blocked:"))
+async def cb_check_blocked(callback: CallbackQuery, bot: Bot) -> None:
+    node_id = parse_id(callback.data, "blocked")
+    node = await get_node(node_id) if node_id is not None else None
+    if node is None:
+        await answer_callback(callback, "Нода не найдена", show_alert=True)
+        return
+    await answer_callback(callback)
+    _, _, verdict = await refresh_node_blocked(
+        node,
+        bot=bot,
+        alert_chat_id=settings.ALERT_CHAT_ID or settings.ADMIN_ID,
+    )
+    updated = await get_node(node.id)
+    if updated is None:
+        await edit_message(callback, "Нода не найдена.", main_inline())
+        return
+    await edit_message(callback, f"{verdict}\n\n{format_node_card(updated)}", node_actions(updated))
 
 
 @router.callback_query(F.data.startswith("toggle:"))

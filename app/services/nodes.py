@@ -117,6 +117,25 @@ async def record_check_result(
         return True, changed, should_notify
 
 
+async def record_blocked_result(
+    node_id: int, blocked: bool, checked_at: datetime
+) -> tuple[bool, bool]:
+    async with async_session() as session:
+        row = (
+            await session.execute(select(Node.id, Node.blocked).where(Node.id == node_id))
+        ).one_or_none()
+        if row is None:
+            return False, False
+        changed = row.blocked != blocked
+        await session.execute(
+            update(Node)
+            .where(Node.id == node_id)
+            .values(blocked=blocked, blocked_checked_at=checked_at)
+        )
+        await session.commit()
+        return True, changed
+
+
 async def set_interval(node_id: int, amount: int, unit: str) -> bool:
     if amount <= 0 or unit not in {"s", "m", "h"}:
         return False
