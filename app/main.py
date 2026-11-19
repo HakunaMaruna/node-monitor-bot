@@ -6,6 +6,7 @@ from aiogram import Bot, Dispatcher
 from app.config import settings
 from app.database import init_db
 from app.handlers.admin import router as admin_router
+from app.handlers.menu import router as menu_router
 from app.middlewares.admin import AdminOnlyMiddleware
 from app.services.scheduler import MonitorScheduler
 
@@ -19,6 +20,8 @@ async def main() -> None:
     bot = Bot(token=settings.BOT_TOKEN)
     dp = Dispatcher()
     dp.message.middleware(AdminOnlyMiddleware(settings.ADMIN_ID))
+    dp.callback_query.middleware(AdminOnlyMiddleware(settings.ADMIN_ID))
+    dp.include_router(menu_router)
     dp.include_router(admin_router)
 
     scheduler = MonitorScheduler(

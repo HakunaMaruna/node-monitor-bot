@@ -1,39 +1,32 @@
 from aiogram import Bot, Router
 from aiogram.filters import Command, CommandObject
+from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
-from app.config import settings
-from app.services.monitor import check_node
-from app.services.nodes import (
-    add_node,
-    delete_node,
-    get_node,
-    list_nodes,
-    set_enabled,
-)
-from app.utils.formatting import format_node, format_status_change
+from app.handlers import menu
+from app.services.nodes import add_node, delete_node, get_node, list_nodes, set_enabled
+from app.utils.formatting import format_node_card
 
 router = Router()
 
 
 @router.message(Command("start"))
+async def cmd_start(message: Message) -> None:
+    await menu.show_main(message)
+
+
 @router.message(Command("help"))
 async def cmd_help(message: Message) -> None:
-    await message.answer(
-        "Мониторинг нод.\n"
-        "/add <name> <TCP|HTTP|HTTPS> <ip> <port> [timeout] [expected] - добавить ноду\n"
-        "/list - список нод\n"
-        "/remove <id> - удалить ноду\n"
-        "/enable <id> /disable <id> - включить или выключить проверку\n"
-        "/check [id] - проверить ноду или все включённые ноды\n"
-        f"Периодичность проверки: {settings.DEFAULT_CHECK_INTERVAL} мин, "
-        f"сводка: {settings.SUMMARY_INTERVAL_HOURS} ч"
-    )
+    await menu.show_help(message)
 
 
 @router.message(Command("add"))
-async def cmd_add(message: Message, command: CommandObject) -> None:
-    parts = (command.args or "").split()
+async def cmd_add(message: Message, command: CommandObject, state: FSMContext) -> None:
+    if not command.args:
+        await menu.start_add_flow(message, state)
+        return
+
+    parts = command.args.split()
     if len(parts) < 4:
         await message.answer("Формат: /add <name> <TCP|HTTP|HTTPS> <ip> <port> [timeout] [expected]")
         return
@@ -61,16 +54,12 @@ async def cmd_add(message: Message, command: CommandObject) -> None:
         timeout_sec=timeout,
         expected_response=" ".join(parts[5:]) or None,
     )
-    await message.answer(f"Нода #{node.id} добавлена.\n{format_node(node)}")
+    await message.answer(f"Нода #{node.id} добавлена.\n{format_node_card(node)}")
 
 
 @router.message(Command("list"))
 async def cmd_list(message: Message) -> None:
-    nodes = await list_nodes()
-    if not nodes:
-        await message.answer("Ноды не добавлены.")
-        return
-    await message.answer("\n".join(format_node(node) for node in nodes))
+    await menu.show_list(message)
 
 
 @router.message(Command("remove"))
@@ -118,16 +107,7 @@ async def cmd_check(message: Message, command: CommandObject, bot: Bot) -> None:
             await message.answer("Нет включённых нод.")
             return
 
-    results = []
-    for node in nodes:
-        status, changed = await check_node(node)
-        if changed:
-            await bot.send_message(
-                chat_id=settings.ALERT_CHAT_ID or settings.ADMIN_ID,
-                text=format_status_change(node, status),
-            )
-        results.append(f"#{node.id} {node.name}: {'UP' if status else 'DOWN'}")
-    await message.answer("\n".join(results))
+    await message.answer(await menu.perform_checks(nodes, bot))
 
 
 def parse_id(args: str | None) -> int | None:

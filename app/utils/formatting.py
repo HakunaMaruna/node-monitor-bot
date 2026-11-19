@@ -13,6 +13,19 @@ def format_node(node: Node) -> str:
     )
 
 
+def format_node_card(node: Node) -> str:
+    checked = node.last_check_time.strftime("%Y-%m-%d %H:%M") if node.last_check_time else "-"
+    return (
+        f"Нода #{node.id}: {node.name}\n"
+        f"Адрес: {node.protocol}://{node.ip}:{node.port}\n"
+        f"Статус: {status_label(node.last_status)}\n"
+        f"Проверка: {'включена' if node.enabled else 'выключена'}\n"
+        f"Таймаут: {node.timeout_sec} с\n"
+        f"Ожидаемый ответ: {node.expected_response or '-'}\n"
+        f"Последняя проверка: {checked}"
+    )
+
+
 def format_status_change(node: Node, status: bool) -> str:
     marker = "OK" if status else "ALERT"
     return f"{marker}: {node.name} ({node.ip}:{node.port}) -> {status_label(status)}"
