@@ -42,6 +42,7 @@ async def test_node_crud(node_db):
     assert loaded.check_interval == 1
     assert loaded.check_interval_unit == "m"
     assert loaded.last_notified_status is None
+    assert loaded.status_since is None
     assert loaded.last_alert_time is None
     assert loaded.blocked is None
     assert loaded.blocked_checked_at is None
@@ -94,6 +95,21 @@ async def test_record_check_result_stores_metrics(node_db):
     assert loaded.last_error is None
     assert loaded.consecutive_failures == 0
     assert loaded.last_alert_time is None
+
+
+async def test_record_check_result_tracks_status_since(node_db):
+    node = await add_node(name="status", ip="127.0.0.1", port=80, protocol="HTTP")
+    start = datetime(2026, 1, 1, 12, 0)
+
+    await record_check_result(node.id, False, start)
+    assert (await get_node(node.id)).status_since == start
+
+    await record_check_result(node.id, False, start + timedelta(minutes=5))
+    assert (await get_node(node.id)).status_since == start
+
+    recovered_at = start + timedelta(minutes=10)
+    await record_check_result(node.id, True, recovered_at)
+    assert (await get_node(node.id)).status_since == recovered_at
 
 
 async def test_record_check_result_throttles_repeated_down_alerts(node_db):

@@ -77,10 +77,21 @@ class MonitorScheduler:
             self.scheduler.shutdown()
 
     async def _check_node(self, node: Node) -> None:
+        was_down_since = node.status_since if not node.last_status else None
         status, _, should_notify = await check_node(node)
         if should_notify:
             fresh = await get_node(node.id) or node
-            await send_status_alert(self.bot, fresh, status, self.alert_chat_id)
+            downtime = None
+            if status and was_down_since is not None:
+                end = fresh.status_since or naive_utcnow()
+                downtime = (end - was_down_since).total_seconds()
+            await send_status_alert(
+                self.bot,
+                fresh,
+                status,
+                self.alert_chat_id,
+                downtime_seconds=downtime,
+            )
 
     async def poll_nodes(self) -> None:
         now = naive_utcnow()

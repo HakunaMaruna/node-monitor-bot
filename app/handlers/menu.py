@@ -5,6 +5,7 @@ from aiogram.types import CallbackQuery, Message
 
 from app.config import settings
 from app.handlers.states import AddNode, SetInterval
+from app.models.node import naive_utcnow
 from app.services.cheburcheck import refresh_node_blocked
 from app.services.monitor import check_node
 from app.services.notifier import send_status_alert
@@ -109,10 +110,21 @@ def parse_id(data: str, prefix: str) -> int | None:
 async def perform_checks(nodes, bot: Bot) -> str:
     results = []
     for node in nodes:
+        was_down_since = node.status_since if not node.last_status else None
         status, _, should_notify = await check_node(node)
         fresh = await get_node(node.id) or node
         if should_notify:
-            await send_status_alert(bot, fresh, status, settings.ALERT_CHAT_ID or settings.ADMIN_ID)
+            downtime = None
+            if status and was_down_since is not None:
+                end = fresh.status_since or naive_utcnow()
+                downtime = (end - was_down_since).total_seconds()
+            await send_status_alert(
+                bot,
+                fresh,
+                status,
+                settings.ALERT_CHAT_ID or settings.ADMIN_ID,
+                downtime_seconds=downtime,
+            )
         results.append(format_check_result(fresh, status))
     if len(results) > MAX_LIST_ITEMS:
         results = results[:MAX_LIST_ITEMS] + [f"… и ещё {len(results) - MAX_LIST_ITEMS}"]

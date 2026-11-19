@@ -10,10 +10,21 @@ from app.utils.formatting import format_blocked_change, format_status_change
 logger = logging.getLogger(__name__)
 
 
-async def send_status_alert(bot: Bot, node: Node, status: bool, chat_id: int) -> None:
+async def send_status_alert(
+    bot: Bot,
+    node: Node,
+    status: bool,
+    chat_id: int,
+    *,
+    downtime_seconds: float | None = None,
+) -> None:
     try:
         await bot.send_message(
-            chat_id=chat_id, text=format_status_change(node, status), parse_mode=PARSE_MODE
+            chat_id=chat_id,
+            text=format_status_change(
+                node, status, downtime_seconds=downtime_seconds
+            ),
+            parse_mode=PARSE_MODE,
         )
     except TelegramAPIError:
         logger.exception("Не удалось отправить алерт для ноды #%s", node.id)

@@ -72,6 +72,24 @@ async def test_scheduler_alert_uses_fresh_check_metrics(node_db, monkeypatch):
     assert "Ошибок подряд: <b>1</b>" in bot.messages[0][1]
 
 
+async def test_scheduler_recovery_alert_reports_downtime(node_db, monkeypatch):
+    node = await add_node(name="recover", ip="10.0.0.1", port=80, protocol="HTTP")
+    await record_check_result(node.id, False, datetime(2026, 1, 1, 12, 0))
+
+    async def fake_check(candidate):
+        await record_check_result(candidate.id, True, datetime(2026, 1, 1, 12, 5))
+        return True, True, True
+
+    monkeypatch.setattr("app.services.scheduler.check_node", fake_check)
+    bot = FakeBot()
+    scheduler = MonitorScheduler(bot, alert_chat_id=100, summary_chat_id=200)
+
+    await scheduler.check_all()
+
+    assert "НОДА ВОССТАНОВЛЕНА" in bot.messages[0][1]
+    assert "Была недоступна: <b>5 мин</b>" in bot.messages[0][1]
+
+
 async def test_scheduler_continues_after_alert_error(node_db, monkeypatch):
     await add_node(name="first", ip="10.0.0.1", port=80, protocol="HTTP")
     await add_node(name="second", ip="10.0.0.2", port=80, protocol="HTTP")

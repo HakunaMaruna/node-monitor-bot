@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 
 from app.models.node import Node
 from app.utils.history import append_check
+from app.version import VERSION
 from app.utils.formatting import (
     format_blocked_change,
     format_blocked_error,
@@ -97,6 +98,26 @@ def test_node_card_escapes_html_from_names():
     assert "<script>" not in card
 
 
+def test_node_card_shows_status_duration():
+    node = make_node(
+        last_status=False,
+        status_since=NOW - timedelta(minutes=45),
+    )
+
+    card = format_node_card(node, now=NOW)
+
+    assert "📅 Недоступна с: <b>19.11 11:15 UTC</b>" in card
+    assert "⏳ Длительность: <b>45 мин</b>" in card
+
+
+def test_recovery_alert_shows_downtime():
+    node = make_node(last_status=True, status_since=NOW)
+    alert = format_status_change(node, True, downtime_seconds=125)
+
+    assert "🟢 <b>НОДА ВОССТАНОВЛЕНА</b>" in alert
+    assert "⏳ Была недоступна: <b>2 мин</b>" in alert
+
+
 def test_node_card_shows_error_uptime_and_sparkline():
     history = append_check(None, NOW - timedelta(minutes=10), True)
     history = append_check(history, NOW - timedelta(minutes=5), False)
@@ -186,7 +207,7 @@ def test_main_menu_and_list_header_use_separate_lines():
     menu = format_main_menu(total=3, enabled=2, down=1)
     header = format_list_header(total=45, enabled=40, page=1, pages=3)
 
-    assert "📌 Версия: <b>1.4</b>" in menu
+    assert f"📌 Версия: <b>{VERSION}</b>" in menu
     assert "🖥️ Всего нод: <b>3</b>" in menu
     assert "🟢 Активных: <b>2</b>" in menu
     assert "🔴 Проблем: <b>1</b>" in menu

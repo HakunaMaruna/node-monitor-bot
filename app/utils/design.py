@@ -13,6 +13,7 @@ ICON = {
     "https": "🔒",
     "shield": "🛡️",
     "clock": "⏱️",
+    "duration": "⏳",
     "history": "🕒",
     "settings": "⚙️",
     "refresh": "🔄",

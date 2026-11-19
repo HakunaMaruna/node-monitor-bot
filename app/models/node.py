@@ -28,6 +28,7 @@ class Node(Base):
     last_status: Mapped[bool] = mapped_column(Boolean, default=True)
     last_notified_status: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=None)
     last_check_time: Mapped[datetime] = mapped_column(DateTime, default=naive_utcnow)
+    status_since: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
     last_alert_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
     blocked: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=None)
     blocked_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)

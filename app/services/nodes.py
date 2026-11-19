@@ -101,6 +101,8 @@ async def record_check_result(
             return False, False, False
 
         changed = node.last_status != status
+        if changed or node.status_since is None:
+            node.status_since = checked_at
         if status:
             should_notify = node.last_notified_status is not True
             if should_notify:

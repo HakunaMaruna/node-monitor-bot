@@ -38,6 +38,22 @@ def _relative(value: datetime | None, now: datetime) -> str:
     return f"{hours // 24} дн назад"
 
 
+def format_duration(seconds: float) -> str:
+    total = max(0, int(seconds))
+    if total < 60:
+        return f"{total} с"
+    minutes = total // 60
+    if minutes < 60:
+        return f"{minutes} мин"
+    hours = minutes // 60
+    if hours < 24:
+        rest = minutes % 60
+        return f"{hours} ч {rest} мин" if rest else f"{hours} ч"
+    days = hours // 24
+    rest = hours % 24
+    return f"{days} дн {rest} ч" if rest else f"{days} дн"
+
+
 def _node_address(node: Node, *, scheme: bool = False) -> str:
     if not node.ip:
         return "—"
@@ -100,6 +116,16 @@ def format_node_card(node: Node, now: datetime | None = None) -> str:
         f"{ICON['calendar']} Точное время: <b>{_absolute(node.last_check_time)} UTC</b>",
         f"{ICON['settings']} Таймаут: <b>{node.timeout_sec} с</b>",
     ]
+    if node.status_since is not None:
+        status_index = next(
+            index for index, line in enumerate(lines) if "Статус:" in line
+        )
+        label = "Доступна с" if node.last_status else "Недоступна с"
+        elapsed = format_duration((current - node.status_since).total_seconds())
+        lines[status_index + 1 : status_index + 1] = [
+            f"{ICON['calendar']} {label}: <b>{_absolute(node.status_since)} UTC</b>",
+            f"{ICON['duration']} Длительность: <b>{elapsed}</b>",
+        ]
     if protocol in {"http", "https"} and node.expected_response:
         lines.append(f"{ICON['search']} Ожидаемый ответ: <code>{esc(node.expected_response)}</code>")
     elif protocol == "tcp":
@@ -151,7 +177,9 @@ def format_check_result(node: Node, status: bool) -> str:
     return "\n".join(lines)
 
 
-def format_status_change(node: Node, status: bool) -> str:
+def format_status_change(
+    node: Node, status: bool, *, downtime_seconds: float | None = None
+) -> str:
     title = "НОДА ВОССТАНОВЛЕНА" if status else "НОДА НЕДОСТУПНА"
     lines = [
         f"{status_icon(status)} <b>{title}</b>",
@@ -160,6 +188,10 @@ def format_status_change(node: Node, status: bool) -> str:
         f"{ICON['link']} Адрес: <code>{esc(_node_address(node))}</code>",
         f"{ICON['pin']} Статус: <b>{STATUS_TEXT[status]}</b>",
     ]
+    if status and downtime_seconds is not None:
+        lines.append(
+            f"{ICON['duration']} Была недоступна: <b>{format_duration(downtime_seconds)}</b>"
+        )
     if node.last_latency_ms is not None:
         lines.append(f"{ICON['latency']} Задержка: <b>{node.last_latency_ms} мс</b>")
     if not status and node.last_error:
