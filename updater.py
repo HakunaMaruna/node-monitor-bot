@@ -15,6 +15,23 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
+def load_env_file(path: Path) -> None:
+    if not path.is_file():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key:
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+            value = value[1:-1]
+        os.environ.setdefault(key, value)
+
+
 @dataclass
 class UpdaterConfig:
     deploy_dir: Path
@@ -34,7 +51,11 @@ class UpdaterConfig:
     @classmethod
     def from_env(cls, deploy_dir: str | None = None) -> "UpdaterConfig":
         root = Path(deploy_dir or os.getenv("DEPLOY_DIR") or Path.cwd()).resolve()
+        load_env_file(root / ".env")
         backup_dir = Path(os.getenv("BACKUP_DIR") or root / "backups")
+        if not backup_dir.is_absolute():
+            backup_dir = root / backup_dir
+        backup_dir = backup_dir.resolve()
         return cls(
             deploy_dir=root,
             bot_token=os.getenv("BOT_TOKEN", ""),

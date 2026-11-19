@@ -44,6 +44,31 @@ def test_version_comparison():
     assert updater.is_newer("0.9", "1.0") is False
 
 
+def test_from_env_loads_dotenv_without_overriding_environment(tmp_path, monkeypatch):
+    root = tmp_path / "deploy"
+    root.mkdir()
+    (root / ".env").write_text(
+        'BOT_TOKEN=from-file\n'
+        'ADMIN_ID=99\n'
+        'BACKUP_DIR=backups\n'
+        'INCLUDE_ENV=0\n'
+        'UPDATE_COMMAND=echo "hi there"\n',
+        encoding="utf-8",
+    )
+    for key in ("DEPLOY_DIR", "BACKUP_DIR", "BOT_TOKEN", "ADMIN_ID", "ALERT_CHAT_ID", "INCLUDE_ENV", "UPDATE_COMMAND"):
+        monkeypatch.delenv(key, raising=False)
+
+    config = UpdaterConfig.from_env(str(root))
+    assert config.bot_token == "from-file"
+    assert config.chat_id == "99"
+    assert config.backup_dir == root / "backups"
+    assert config.include_env is False
+    assert config.update_command == 'echo "hi there"'
+
+    monkeypatch.setenv("BOT_TOKEN", "from-env")
+    assert UpdaterConfig.from_env(str(root)).bot_token == "from-env"
+
+
 def test_create_backup_contains_code_and_env(tmp_path):
     config = make_config(tmp_path)
     seed_deploy(config)
