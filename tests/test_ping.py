@@ -22,6 +22,14 @@ async def test_check_tcp_failure():
     assert await PingService.check_tcp("127.0.0.1", port, 1) is False
 
 
+async def test_check_tcp_tolerates_cancelled_lookup(monkeypatch):
+    async def cancelled(*args, **kwargs):
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(asyncio, "open_connection", cancelled)
+    assert await PingService.check_tcp("unresolvable.invalid", 80, 1) is False
+
+
 @pytest.fixture
 async def http_port():
     async def handler(request):

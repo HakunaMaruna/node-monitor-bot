@@ -64,7 +64,7 @@ class PingService:
                 asyncio.open_connection(ip, port), timeout=timeout
             )
             return True
-        except (OSError, asyncio.TimeoutError):
+        except (OSError, asyncio.TimeoutError, asyncio.CancelledError):
             return False
         finally:
             if writer is not None:
@@ -91,7 +91,13 @@ class PingService:
                         return True
                     body = await response.text()
                     return expected_response in body
-        except (aiohttp.ClientError, asyncio.TimeoutError, OSError, UnicodeError):
+        except (
+            aiohttp.ClientError,
+            asyncio.TimeoutError,
+            asyncio.CancelledError,
+            OSError,
+            UnicodeError,
+        ):
             return False
 
     @classmethod
