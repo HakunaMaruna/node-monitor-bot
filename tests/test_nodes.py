@@ -6,6 +6,7 @@ from app.services.nodes import (
     get_node,
     list_nodes,
     record_blocked_result,
+    record_check_result,
     set_enabled,
     set_interval,
     update_node_status,
@@ -43,6 +44,10 @@ async def test_node_crud(node_db):
     assert loaded.last_notified_status is None
     assert loaded.blocked is None
     assert loaded.blocked_checked_at is None
+    assert loaded.last_latency_ms is None
+    assert loaded.last_error is None
+    assert loaded.consecutive_failures == 0
+    assert loaded.check_history is None
 
     checked_block = datetime(2026, 1, 1, 13, 0)
     exists, changed = await record_blocked_result(node.id, True, checked_block)
@@ -63,3 +68,26 @@ async def test_node_crud(node_db):
     assert await delete_node(node.id) is True
     assert await get_node(node.id) is None
     assert await delete_node(node.id) is False
+
+
+async def test_record_check_result_stores_metrics(node_db):
+    node = await add_node(name="metrics", ip="127.0.0.1", port=80, protocol="HTTP")
+    checked_at = datetime(2026, 1, 1, 12, 0)
+
+    result = await record_check_result(
+        node.id, False, checked_at, latency_ms=321, error="таймаут"
+    )
+    assert result == (True, True, True)
+
+    loaded = await get_node(node.id)
+    assert loaded.last_latency_ms == 321
+    assert loaded.last_error == "таймаут"
+    assert loaded.consecutive_failures == 1
+    assert "true" not in (loaded.check_history or "").lower()
+    assert "false" in (loaded.check_history or "").lower()
+
+    await record_check_result(node.id, True, checked_at, latency_ms=10, error=None)
+    loaded = await get_node(node.id)
+    assert loaded.last_latency_ms == 10
+    assert loaded.last_error is None
+    assert loaded.consecutive_failures == 0

@@ -80,6 +80,35 @@ def test_build_check_url_handles_ipv6_and_scheme():
     assert build_check_url(bracketed_v6) == "http://[::1]:9090"
 
 
+async def test_check_node_detailed_reports_latency_and_error(http_port):
+    node = Node(
+        name="http",
+        ip="127.0.0.1",
+        port=http_port,
+        protocol="HTTP",
+        timeout_sec=2,
+        expected_response="missing",
+    )
+
+    result = await PingService.check_node_detailed(node)
+
+    assert result.status is False
+    assert result.error == "ожидаемый текст не найден"
+    assert result.latency_ms is not None and result.latency_ms >= 0
+
+
+async def test_check_node_detailed_success_has_no_error(http_port):
+    node = Node(
+        name="http", ip="127.0.0.1", port=http_port, protocol="HTTP", timeout_sec=2
+    )
+
+    result = await PingService.check_node_detailed(node)
+
+    assert result.status is True
+    assert result.error is None
+    assert result.latency_ms is not None
+
+
 async def test_check_node_dispatch(http_port):
     tcp_node = Node(name="tcp", ip="127.0.0.1", port=http_port, protocol="TCP", timeout_sec=1)
     http_node = Node(name="http", ip="127.0.0.1", port=http_port, protocol="HTTP", timeout_sec=2)

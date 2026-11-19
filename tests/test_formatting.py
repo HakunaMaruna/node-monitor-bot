@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 
 from app.models.node import Node
+from app.utils.history import append_check
 from app.utils.formatting import (
     format_blocked_change,
     format_check_result,
@@ -28,6 +29,10 @@ def make_node(**kwargs) -> Node:
         "blocked_checked_at": NOW - timedelta(minutes=30),
         "timeout_sec": 7,
         "expected_response": "OK",
+        "last_latency_ms": 42,
+        "last_error": None,
+        "consecutive_failures": 0,
+        "check_history": None,
     }
     values.update(kwargs)
     return Node(**values)
@@ -43,6 +48,8 @@ def test_node_card_has_icons_sections_and_relative_time():
     assert "🕒 Последняя проверка: 19.11 11:58 UTC · 2 мин назад" in card
     assert "✅ Не заблокирована" in card
     assert "🔎 Ожидаемый ответ: <code>OK</code>" in card
+    assert "⚡ Задержка: <b>42 мс</b>" in card
+    assert "📈 Uptime 24h: <b>нет данных</b> · —" in card
     assert "<b>СОСТОЯНИЕ</b>" in card
     assert "<b>CHEBURCHECK</b>" in card
     assert "<b>УПРАВЛЕНИЕ</b>" in card
@@ -77,6 +84,25 @@ def test_node_card_escapes_html_from_names():
     assert "<script>" not in card
 
 
+def test_node_card_shows_error_uptime_and_sparkline():
+    history = append_check(None, NOW - timedelta(minutes=10), True)
+    history = append_check(history, NOW - timedelta(minutes=5), False)
+    node = make_node(
+        last_status=False,
+        last_latency_ms=137,
+        last_error="таймаут",
+        consecutive_failures=1,
+        check_history=history,
+    )
+
+    card = format_node_card(node, now=NOW)
+
+    assert "⚡ Задержка: <b>137 мс</b>" in card
+    assert "📈 Uptime 24h: <b>50.0%</b> · 🟢🔴" in card
+    assert "⚠️ Причина: <code>таймаут</code>" in card
+    assert "🔁 Ошибок подряд: <b>1</b>" in card
+
+
 def test_check_result_and_alerts_use_russian_statuses():
     node = make_node(last_status=False)
 
@@ -103,3 +129,13 @@ def test_summary_has_sections_and_no_disabled_nodes_in_lists():
     assert "Не проверялось: <b>1</b>" in summary
     assert "blocked · <code>example.com:80</code>" in summary
     assert "off" not in summary
+
+
+def test_summary_includes_average_uptime():
+    history = append_check(None, NOW - timedelta(minutes=10), True)
+    history = append_check(history, NOW - timedelta(minutes=5), False)
+    nodes = [make_node(id=1, check_history=history)]
+
+    summary = format_summary(nodes)
+
+    assert "Средний uptime 24h: <b>50.0%</b>" in summary

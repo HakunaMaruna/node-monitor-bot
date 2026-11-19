@@ -6,7 +6,13 @@ from app.services.ping import PingService
 
 
 async def check_node(node: Node) -> tuple[bool, bool, bool]:
-    status = await PingService.check_node(node)
+    result = await PingService.check_node_detailed(node)
     checked_at = datetime.now(timezone.utc).replace(tzinfo=None)
-    _, changed, should_notify = await record_check_result(node.id, status, checked_at)
-    return status, changed, should_notify
+    _, changed, should_notify = await record_check_result(
+        node.id,
+        result.status,
+        checked_at,
+        latency_ms=result.latency_ms,
+        error=result.error,
+    )
+    return result.status, changed, should_notify

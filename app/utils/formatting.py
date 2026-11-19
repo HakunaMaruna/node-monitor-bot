@@ -12,6 +12,7 @@ from app.utils.design import (
     protocol_icon,
     status_icon,
 )
+from app.utils.history import decode_history, uptime_24h
 from app.utils.intervals import format_interval
 from app.version import VERSION
 
@@ -35,6 +36,13 @@ def _relative(value: datetime | None, now: datetime) -> str:
     if hours < 24:
         return f"{hours} ч назад"
     return f"{hours // 24} дн назад"
+
+
+def format_sparkline(raw: str | None, limit: int = 20) -> str:
+    items = decode_history(raw)[-limit:]
+    if not items:
+        return "—"
+    return "".join(ICON["up"] if status else ICON["down"] for _, status in items)
 
 
 def _next_check(node: Node, now: datetime) -> str:
@@ -80,12 +88,25 @@ def format_node_card(node: Node, now: datetime | None = None) -> str:
         f"{_relative(node.last_check_time, current)}",
         f"{ICON['settings']} Таймаут: <b>{node.timeout_sec} с</b>",
     ]
-    if node.protocol.upper() in {"HTTP", "HTTPS"} and node.expected_response:
+    if protocol in {"http", "https"} and node.expected_response:
         lines.append(f"{ICON['search']} Ожидаемый ответ: <code>{esc(node.expected_response)}</code>")
-    elif node.protocol.upper() == "TCP":
+    elif protocol == "tcp":
         lines.append(f"{ICON['search']} Ожидаемый ответ: не используется")
     else:
         lines.append(f"{ICON['search']} Ожидаемый ответ: не задан")
+
+    latency = f"{node.last_latency_ms} мс" if node.last_latency_ms is not None else "—"
+    uptime = uptime_24h(node.check_history, current)
+    uptime_text = f"{uptime}%" if uptime is not None else "нет данных"
+    lines.append(f"{ICON['latency']} Задержка: <b>{latency}</b>")
+    lines.append(
+        f"{ICON['trend']} Uptime 24h: <b>{uptime_text}</b> · {format_sparkline(node.check_history)}"
+    )
+    if node.last_error:
+        lines.append(f"{ICON['warning']} Причина: <code>{esc(node.last_error)}</code>")
+    if node.consecutive_failures:
+        lines.append(f"{ICON['repeat']} Ошибок подряд: <b>{node.consecutive_failures}</b>")
+
     lines.extend(
         [
             "",
@@ -191,12 +212,25 @@ def format_summary(nodes: list[Node]) -> str:
         f"{ICON['up']} В сети: <b>{len(up)}</b>",
         f"{ICON['down']} Недоступно: <b>{len(down)}</b>",
         f"{ICON['paused']} Отключено: <b>{len(nodes) - len(enabled)}</b>",
-        "",
-        f"{ICON['shield']} <b>CHEBURCHECK</b>",
-        f"{ICON['ok']} Не заблокировано: <b>{len(clean)}</b>",
-        f"{ICON['blocked']} Заблокировано: <b>{len(blocked)}</b>",
-        f"{ICON['unknown']} Не проверялось: <b>{unchecked}</b>",
     ]
+    now = naive_utcnow()
+    uptimes = [
+        value
+        for node in enabled
+        if (value := uptime_24h(node.check_history, now)) is not None
+    ]
+    if uptimes:
+        average = round(sum(uptimes) / len(uptimes), 1)
+        lines.append(f"{ICON['trend']} Средний uptime 24h: <b>{average}%</b>")
+    lines.extend(
+        [
+            "",
+            f"{ICON['shield']} <b>CHEBURCHECK</b>",
+            f"{ICON['ok']} Не заблокировано: <b>{len(clean)}</b>",
+            f"{ICON['blocked']} Заблокировано: <b>{len(blocked)}</b>",
+            f"{ICON['unknown']} Не проверялось: <b>{unchecked}</b>",
+        ]
+    )
     if blocked:
         lines.extend(["", f"{ICON['blocked']} <b>ЗАБЛОКИРОВАННЫЕ</b>"])
         lines.extend(

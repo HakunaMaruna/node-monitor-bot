@@ -39,5 +39,9 @@ async def test_init_db_migrates_legacy_nodes_table(monkeypatch):
         "last_notified_status",
         "blocked",
         "blocked_checked_at",
+        "last_latency_ms",
+        "last_error",
+        "consecutive_failures",
+        "check_history",
     } <= columns
     await engine.dispose()
