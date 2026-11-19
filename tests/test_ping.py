@@ -22,6 +22,14 @@ async def test_check_tcp_failure():
     assert await PingService.check_tcp("127.0.0.1", port, 1) is False
 
 
+async def test_check_tcp_tolerates_cancelled_lookup(monkeypatch):
+    async def cancelled(*args, **kwargs):
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(asyncio, "open_connection", cancelled)
+    assert await PingService.check_tcp("unresolvable.invalid", 80, 1) is False
+
+
 @pytest.fixture
 async def http_port():
     async def handler(request):
@@ -70,6 +78,35 @@ def test_build_check_url_handles_ipv6_and_scheme():
     assert build_check_url(with_scheme) == "https://example.com"
     assert build_check_url(with_port) == "http://example.com:8080"
     assert build_check_url(bracketed_v6) == "http://[::1]:9090"
+
+
+async def test_check_node_detailed_reports_latency_and_error(http_port):
+    node = Node(
+        name="http",
+        ip="127.0.0.1",
+        port=http_port,
+        protocol="HTTP",
+        timeout_sec=2,
+        expected_response="missing",
+    )
+
+    result = await PingService.check_node_detailed(node)
+
+    assert result.status is False
+    assert result.error == "ожидаемый текст не найден"
+    assert result.latency_ms is not None and result.latency_ms >= 0
+
+
+async def test_check_node_detailed_success_has_no_error(http_port):
+    node = Node(
+        name="http", ip="127.0.0.1", port=http_port, protocol="HTTP", timeout_sec=2
+    )
+
+    result = await PingService.check_node_detailed(node)
+
+    assert result.status is True
+    assert result.error is None
+    assert result.latency_ms is not None
 
 
 async def test_check_node_dispatch(http_port):

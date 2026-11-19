@@ -2,8 +2,10 @@ from datetime import datetime
 
 from sqlalchemy import select, update
 
+from app.config import settings
 from app.database import async_session
 from app.models.node import Node
+from app.utils.history import append_check
 
 
 async def list_nodes(*, enabled_only: bool = False) -> list[Node]:
@@ -80,41 +82,69 @@ async def update_node_status(node_id: int, status: bool, checked_at: datetime) -
 
 
 async def record_check_result(
-    node_id: int, status: bool, checked_at: datetime
+    node_id: int,
+    status: bool,
+    checked_at: datetime,
+    *,
+    latency_ms: int | None = None,
+    error: str | None = None,
+    alert_repeat_seconds: int | None = None,
 ) -> tuple[bool, bool, bool]:
+    repeat_seconds = (
+        settings.ALERT_REPEAT_MINUTES * 60
+        if alert_repeat_seconds is None
+        else alert_repeat_seconds
+    )
     async with async_session() as session:
-        result = await session.execute(
-            update(Node)
-            .where(Node.id == node_id, Node.last_status != status)
-            .values(last_status=status, last_check_time=checked_at)
-        )
-        if result.rowcount > 0:
-            exists, changed = True, True
-        else:
-            result = await session.execute(
-                update(Node).where(Node.id == node_id).values(last_check_time=checked_at)
-            )
-            exists, changed = result.rowcount > 0, False
-
-        if not exists:
-            await session.commit()
+        node = await session.get(Node, node_id)
+        if node is None:
             return False, False, False
 
+        changed = node.last_status != status
+        if changed or node.status_since is None:
+            node.status_since = checked_at
         if status:
-            result = await session.execute(
-                update(Node)
-                .where(Node.id == node_id, Node.last_notified_status.is_not(True))
-                .values(last_notified_status=True)
-            )
-            should_notify = result.rowcount > 0
+            should_notify = node.last_notified_status is not True
+            if should_notify:
+                node.last_alert_time = None
         else:
-            await session.execute(
-                update(Node).where(Node.id == node_id).values(last_notified_status=False)
+            last_alert_time = node.last_alert_time
+            repeat_due = (
+                last_alert_time is None
+                or (checked_at - last_alert_time).total_seconds() >= repeat_seconds
             )
-            should_notify = True
+            should_notify = changed or repeat_due
+            if should_notify:
+                node.last_alert_time = checked_at
+        node.last_status = status
+        node.last_check_time = checked_at
+        node.last_notified_status = status
+        node.last_latency_ms = latency_ms
+        node.last_error = None if status else error
+        node.consecutive_failures = 0 if status else (node.consecutive_failures or 0) + 1
+        node.check_history = append_check(node.check_history, checked_at, status)
 
         await session.commit()
         return True, changed, should_notify
+
+
+async def record_blocked_result(
+    node_id: int, blocked: bool, checked_at: datetime
+) -> tuple[bool, bool]:
+    async with async_session() as session:
+        row = (
+            await session.execute(select(Node.id, Node.blocked).where(Node.id == node_id))
+        ).one_or_none()
+        if row is None:
+            return False, False
+        changed = row.blocked != blocked
+        await session.execute(
+            update(Node)
+            .where(Node.id == node_id)
+            .values(blocked=blocked, blocked_checked_at=checked_at)
+        )
+        await session.commit()
+        return True, changed
 
 
 async def set_interval(node_id: int, amount: int, unit: str) -> bool:

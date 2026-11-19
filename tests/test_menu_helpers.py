@@ -10,7 +10,7 @@ class FakeMessage:
     def __init__(self, error: str):
         self.error = error
 
-    async def edit_text(self, text, reply_markup=None):
+    async def edit_text(self, text, reply_markup=None, **kwargs):
         raise TelegramBadRequest(AnswerCallbackQuery(callback_query_id="stale"),self.error)
 
 
@@ -50,12 +50,17 @@ async def test_perform_checks_continues_after_alert_error(monkeypatch):
 
     monkeypatch.setattr("app.handlers.menu.check_node", fake_check)
 
+    async def fake_get_node(node_id):
+        return next(node for node in nodes if node.id == node_id)
+
+    monkeypatch.setattr("app.handlers.menu.get_node", fake_get_node)
+
     class FailingBot:
         def __init__(self):
             self.messages = []
             self.attempts = 0
 
-        async def send_message(self, chat_id, text):
+        async def send_message(self, chat_id, text, **kwargs):
             self.attempts += 1
             if self.attempts == 1:
                 raise TelegramAPIError(AnswerCallbackQuery(callback_query_id="stale"), "boom")

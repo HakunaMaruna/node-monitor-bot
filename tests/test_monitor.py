@@ -1,24 +1,30 @@
 from app.models.node import Node
 from app.services.monitor import check_node
 from app.services.nodes import get_node
-from app.services.ping import PingService
+from app.services.ping import CheckResult, PingService
 
 
 async def test_check_node_persists_status_change(node_db, monkeypatch):
     node = await add_test_node()
 
     async def down(candidate):
-        return False
+        return CheckResult(False, 12, "соединение отклонено")
 
-    monkeypatch.setattr(PingService, "check_node", staticmethod(down))
+    monkeypatch.setattr(PingService, "check_node_detailed", staticmethod(down))
     assert await check_node(node) == (False, True, True)
 
     updated = await get_node(node.id)
     assert updated.last_status is False
     assert updated.last_check_time is not None
+    assert updated.last_latency_ms == 12
+    assert updated.last_error == "соединение отклонено"
+    assert updated.consecutive_failures == 1
+    assert updated.check_history is not None
 
     node = await get_node(node.id)
-    assert await check_node(node) == (False, False, True)
+    assert await check_node(node) == (False, False, False)
+    updated = await get_node(node.id)
+    assert updated.consecutive_failures == 2
 
 
 async def test_check_node_ignores_stale_object_status(node_db, monkeypatch):
@@ -27,22 +33,23 @@ async def test_check_node_ignores_stale_object_status(node_db, monkeypatch):
     stale = await get_node(node.id)
 
     async def down(candidate):
-        return False
+        return CheckResult(False, 12, "соединение отклонено")
 
-    monkeypatch.setattr(PingService, "check_node", staticmethod(down))
+    monkeypatch.setattr(PingService, "check_node_detailed", staticmethod(down))
     assert await check_node(fresh) == (False, True, True)
-    assert await check_node(stale) == (False, False, True)
+    assert await check_node(stale) == (False, False, False)
 
 
 async def test_notification_rules(node_db, monkeypatch):
     node = await add_test_node()
-    statuses = iter([False, True, True])
+    statuses = iter([False, False, True, True])
 
     async def next_status(candidate):
-        return next(statuses)
+        return CheckResult(next(statuses), 20, None)
 
-    monkeypatch.setattr(PingService, "check_node", staticmethod(next_status))
+    monkeypatch.setattr(PingService, "check_node_detailed", staticmethod(next_status))
     assert await check_node(node) == (False, True, True)
+    assert await check_node(node) == (False, False, False)
     assert await check_node(node) == (True, True, True)
     assert await check_node(node) == (True, False, False)
 

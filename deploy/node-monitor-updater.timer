@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Node Monitor Bot updates hourly
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1h
+Unit=node-monitor-updater.service
+Persistent=true
+
+[Install]
+WantedBy=timers.target

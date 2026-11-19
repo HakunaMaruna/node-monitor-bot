@@ -19,6 +19,14 @@ async def init_db():
                 "check_interval": "ALTER TABLE nodes ADD COLUMN check_interval INTEGER DEFAULT 1",
                 "check_interval_unit": "ALTER TABLE nodes ADD COLUMN check_interval_unit VARCHAR DEFAULT 'm'",
                 "last_notified_status": "ALTER TABLE nodes ADD COLUMN last_notified_status BOOLEAN",
+                "status_since": "ALTER TABLE nodes ADD COLUMN status_since DATETIME",
+                "last_alert_time": "ALTER TABLE nodes ADD COLUMN last_alert_time DATETIME",
+                "blocked": "ALTER TABLE nodes ADD COLUMN blocked BOOLEAN",
+                "blocked_checked_at": "ALTER TABLE nodes ADD COLUMN blocked_checked_at DATETIME",
+                "last_latency_ms": "ALTER TABLE nodes ADD COLUMN last_latency_ms INTEGER",
+                "last_error": "ALTER TABLE nodes ADD COLUMN last_error VARCHAR",
+                "consecutive_failures": "ALTER TABLE nodes ADD COLUMN consecutive_failures INTEGER DEFAULT 0",
+                "check_history": "ALTER TABLE nodes ADD COLUMN check_history TEXT",
             }
             for name, statement in additions.items():
                 if name not in columns:

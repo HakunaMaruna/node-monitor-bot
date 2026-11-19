@@ -1,6 +1,7 @@
 services:
   bot:
     build: .
+    image: ghcr.io/hakunamaruna/node-monitor-bot:latest
     env_file: .env
     environment:
       DB_URL: sqlite+aiosqlite:///./data/nodes.db
