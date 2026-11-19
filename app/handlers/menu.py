@@ -311,3 +311,10 @@ async def finish_add(event: Message | CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     text = f"Нода #{node.id} добавлена.\n{format_node_card(node)}"
     await render(event, text, node_actions(node))
+
+
+@router.callback_query()
+async def cb_unknown(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    await answer_callback(callback)
+    await edit_message(callback, "Кнопка устарела. Откройте меню заново.", main_inline())

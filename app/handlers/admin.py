@@ -115,3 +115,11 @@ def parse_id(args: str | None) -> int | None:
         return int((args or "").strip())
     except ValueError:
         return None
+
+
+@router.message()
+async def cmd_unknown(message: Message) -> None:
+    await message.answer(
+        "Не понял сообщение. Используйте кнопки или /help.",
+        reply_markup=menu.main_inline(),
+    )
