@@ -42,7 +42,7 @@ Telegram-бот для периодической проверки нод (TCP/H
 3. **Проверка:** `scheduler.poll_nodes()` по интервалу ноды, кнопка «Проверить» или `/check` → `monitor.check_node()` → `ping.PingService.check_node()` → `nodes.record_check_result()`.
 4. **Алерт:** DOWN — после каждой проверки по интервалу, UP — один раз при восстановлении (`last_notified_status`) → `services/notifier.py` → `ALERT_CHAT_ID` (или `ADMIN_ID`).
 5. **Cheburcheck:** раз в `CHEBURCHECK_INTERVAL_HOURS` (или кнопка в карточке) → `cheburcheck.refresh_nodes_blocked()` → `GET /api/v1/check?target=<host>` → `nodes.record_blocked_result()` → алерт при смене вердикта.
-6. **Сводка:** по расписанию `send_summary()` → `utils.formatting.format_summary()` → `SUMMARY_CHAT_ID` (или `ADMIN_ID`).
+6. **Сводка:** по расписанию `send_summary()` → `utils.formatting.format_summary()` (включая счётчики Cheburcheck) → `SUMMARY_CHAT_ID` (или `ADMIN_ID`).
 
 ## Запуск и проверки
 

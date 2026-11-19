@@ -57,11 +57,19 @@ def format_blocked_change(node: Node, blocked: bool) -> str:
 def format_summary(nodes: list[Node]) -> str:
     enabled = [node for node in nodes if node.enabled]
     down = [node for node in enabled if not node.last_status]
+    blocked = [node for node in enabled if node.blocked is True]
+    clean = [node for node in enabled if node.blocked is False]
+    unchecked = len(enabled) - len(blocked) - len(clean)
     lines = [
         "Сводка по нодам",
         f"Всего: {len(nodes)}, включено: {len(enabled)}",
         f"UP: {len(enabled) - len(down)}, DOWN: {len(down)}",
+        f"Cheburcheck: заблокировано {len(blocked)}, "
+        f"не заблокировано {len(clean)}, не проверялось {unchecked}",
     ]
+    if blocked:
+        lines.append("Заблокированные:")
+        lines.extend(f"- {node.name} ({node.ip}:{node.port})" for node in blocked)
     if down:
         lines.append("Проблемы:")
         lines.extend(f"- {node.name} ({node.ip}:{node.port})" for node in down)

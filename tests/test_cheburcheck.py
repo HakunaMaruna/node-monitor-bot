@@ -8,6 +8,7 @@ from app.services.cheburcheck import (
     refresh_nodes_blocked,
 )
 from app.services.nodes import add_node, get_node
+from app.utils.formatting import format_summary
 
 
 class FakeBot:
@@ -140,3 +141,18 @@ async def test_refresh_nodes_blocked_throttles(node_db, monkeypatch):
     assert targets == ["one.example", "two.example"]
     assert slept == [2.1]
     assert len(messages) == 2
+
+
+def test_summary_includes_cheburcheck_counts():
+    nodes = [
+        Node(id=1, name="blocked", ip="one.example", port=80, protocol="HTTP", enabled=True, blocked=True),
+        Node(id=2, name="clean", ip="two.example", port=80, protocol="HTTP", enabled=True, blocked=False),
+        Node(id=3, name="unknown", ip="three.example", port=80, protocol="HTTP", enabled=True, blocked=None),
+        Node(id=4, name="off", ip="four.example", port=80, protocol="HTTP", enabled=False, blocked=True),
+    ]
+
+    text = format_summary(nodes)
+
+    assert "заблокировано 1, не заблокировано 1, не проверялось 1" in text
+    assert "- blocked (one.example:80)" in text
+    assert "off" not in text
