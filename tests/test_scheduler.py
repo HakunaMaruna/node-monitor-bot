@@ -12,7 +12,7 @@ class FakeBot:
     def __init__(self):
         self.messages = []
 
-    async def send_message(self, chat_id, text):
+    async def send_message(self, chat_id, text, **kwargs):
         self.messages.append((chat_id, text))
 
 
@@ -30,12 +30,12 @@ async def test_scheduler_sends_alerts_and_summaries(node_db, monkeypatch):
 
     await scheduler.check_all()
     assert bot.messages[0][0] == 100
-    assert "ALERT" in bot.messages[0][1]
+    assert "НЕДОСТУПНА" in bot.messages[0][1]
 
     await scheduler.send_summary()
     assert bot.messages[-1][0] == 200
-    assert "Сводка по нодам" in bot.messages[-1][1]
-    assert "DOWN: 1" in bot.messages[-1][1]
+    assert "СВОДКА ПО НОДАМ" in bot.messages[-1][1]
+    assert "Недоступно: <b>1</b>" in bot.messages[-1][1]
 
     scheduler.start()
     assert scheduler.scheduler.get_job("poll_nodes") is not None
@@ -62,7 +62,7 @@ async def test_scheduler_continues_after_alert_error(node_db, monkeypatch):
             super().__init__()
             self.attempts = 0
 
-        async def send_message(self, chat_id, text):
+        async def send_message(self, chat_id, text, **kwargs):
             self.attempts += 1
             if self.attempts == 1:
                 raise TelegramAPIError(AnswerCallbackQuery(callback_query_id="stale"), "boom")

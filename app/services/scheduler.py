@@ -12,6 +12,7 @@ from app.services.cheburcheck import refresh_nodes_blocked
 from app.services.monitor import check_node
 from app.services.notifier import send_status_alert
 from app.services.nodes import list_nodes
+from app.utils.design import PARSE_MODE
 from app.utils.formatting import format_summary
 
 logger = logging.getLogger(__name__)
@@ -109,6 +110,7 @@ class MonitorScheduler:
             await self.bot.send_message(
                 chat_id=self.summary_chat_id,
                 text=format_summary(nodes),
+                parse_mode=PARSE_MODE,
             )
         except TelegramAPIError:
             logger.exception("Не удалось отправить сводку")

@@ -20,8 +20,10 @@ _UNIT_ALIASES = {
 }
 
 
-def interval_seconds(amount: int, unit: str) -> int:
-    return max(1, amount) * UNIT_SECONDS.get(unit, UNIT_SECONDS["m"])
+def interval_seconds(amount: int | None, unit: str | None) -> int:
+    value = 1 if amount is None else amount
+    resolved = "m" if unit is None else unit
+    return max(1, value) * UNIT_SECONDS.get(resolved, UNIT_SECONDS["m"])
 
 
 def parse_interval(value: str) -> tuple[int, str] | None:
@@ -37,5 +39,5 @@ def parse_interval(value: str) -> tuple[int, str] | None:
     return amount, unit
 
 
-def format_interval(amount: int, unit: str) -> str:
-    return f"{amount}{unit}"
+def format_interval(amount: int | None, unit: str | None) -> str:
+    return f"{1 if amount is None else amount}{'m' if unit is None else unit}"

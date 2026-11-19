@@ -23,10 +23,11 @@ Telegram-бот для периодической проверки нод (TCP/H
 │   │   ├── scheduler.py         APScheduler: опрос нод, Cheburcheck и сводки
 │   │   ├── cheburcheck.py       запрос к API cheburcheck.ru, запись вердикта, троттлинг
 │   │   └── notifier.py          отправка алертов с подавлением ошибок Telegram
-│   ├── utils/formatting.py      форматирование статуса, карточки, алерта и сводки
+│   ├── utils/design.py          иконки, HTML-экранирование, лимиты списков
+│   ├── utils/formatting.py      форматирование карточки, алертов, сводки, меню и справки
 │   ├── utils/intervals.py       разбор и форматирование интервалов s/m/h
-│   └── utils/keyboards.py       reply/inline-клавиатуры меню, списка, карточки и мастеров
-├── tests/                       pytest: ping, CRUD, monitor, cheburcheck, scheduler, updater, middleware, keyboards
+│   └── utils/keyboards.py       reply/inline-клавиатуры, иконки и пагинация списка
+├── tests/                       pytest: ping, CRUD, monitor, cheburcheck, scheduler, updater, middleware, keyboards, formatting
 ├── conftest.py                  тестовые env-переменные и in-memory SQLite
 ├── .env.example                 шаблон переменных окружения
 ├── requirements.txt             зависимости (включая sqlalchemy[asyncio])
@@ -43,7 +44,7 @@ Telegram-бот для периодической проверки нод (TCP/H
 ## Потоки данных
 
 1. **Добавление ноды:** кнопка «Добавить ноду» или `/add` → FSM `AddNode` → `services/nodes.add_node()` → таблица `nodes`.
-2. **Навигация:** reply-кнопки и inline-меню → `handlers/menu.py` → карточка ноды/список/подтверждение удаления; `/version` → `app/version.py`.
+2. **Навигация:** reply-кнопки и inline-меню → `handlers/menu.py` → карточка ноды/список с пагинацией по 20 нод/подтверждение удаления; `/version` → `app/version.py`.
 3. **Проверка:** `scheduler.poll_nodes()` по интервалу ноды, кнопка «Проверить» или `/check` → `monitor.check_node()` → `ping.PingService.check_node()` → `nodes.record_check_result()`.
 4. **Алерт:** DOWN — после каждой проверки по интервалу, UP — один раз при восстановлении (`last_notified_status`) → `services/notifier.py` → `ALERT_CHAT_ID` (или `ADMIN_ID`).
 5. **Cheburcheck:** раз в `CHEBURCHECK_INTERVAL_HOURS` (или кнопка в карточке) → `cheburcheck.refresh_nodes_blocked()` → `GET /api/v1/check?target=<host>` → `nodes.record_blocked_result()` → алерт при смене вердикта.

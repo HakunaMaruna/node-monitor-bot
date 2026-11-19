@@ -15,7 +15,7 @@ class FakeBot:
     def __init__(self):
         self.messages = []
 
-    async def send_message(self, chat_id, text):
+    async def send_message(self, chat_id, text, **kwargs):
         self.messages.append((chat_id, text))
 
 
@@ -98,7 +98,7 @@ async def test_refresh_blocked_persists_and_notifies(node_db, monkeypatch):
 
     blocked, changed, message = await refresh_node_blocked(node, bot=bot, alert_chat_id=100)
     assert (blocked, changed) == (False, True)
-    assert "не заблокирована" in message
+    assert "Не заблокирована" in message
     assert len(bot.messages) == 1
 
     updated = await get_node(node.id)
@@ -109,7 +109,7 @@ async def test_refresh_blocked_persists_and_notifies(node_db, monkeypatch):
         await get_node(node.id), bot=bot, alert_chat_id=100
     )
     assert (blocked, changed) == (True, True)
-    assert "заблокирована" in message
+    assert "Заблокирована" in message
     assert len(bot.messages) == 2
 
     blocked, changed, _ = await refresh_node_blocked(
@@ -153,6 +153,8 @@ def test_summary_includes_cheburcheck_counts():
 
     text = format_summary(nodes)
 
-    assert "заблокировано 1, не заблокировано 1, не проверялось 1" in text
-    assert "- blocked (one.example:80)" in text
+    assert "Не заблокировано: <b>1</b>" in text
+    assert "Заблокировано: <b>1</b>" in text
+    assert "Не проверялось: <b>1</b>" in text
+    assert "blocked · <code>one.example:80</code>" in text
     assert "off" not in text

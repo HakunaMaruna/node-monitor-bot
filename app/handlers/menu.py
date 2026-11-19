@@ -9,7 +9,14 @@ from app.services.cheburcheck import refresh_node_blocked
 from app.services.monitor import check_node
 from app.services.notifier import send_status_alert
 from app.services.nodes import add_node, delete_node, get_node, list_nodes, set_enabled, set_interval
-from app.utils.formatting import format_node_card
+from app.utils.design import MAX_LIST_ITEMS, NODES_PER_PAGE, PARSE_MODE, esc
+from app.utils.formatting import (
+    format_check_result,
+    format_help,
+    format_list_header,
+    format_main_menu,
+    format_node_card,
+)
 from app.utils.intervals import format_interval, parse_interval
 from app.utils.keyboards import (
     cancel_keyboard,
@@ -21,44 +28,44 @@ from app.utils.keyboards import (
     reply_menu,
     skip_choice,
 )
-from app.version import VERSION
-
 router = Router()
 STALE_MESSAGE_ERRORS = ("message is not modified", "message to edit not found")
 
-HELP_TEXT = (
-    "Управление кнопками или командами:\n"
-    "/start - меню\n"
-    "/version - версия бота\n"
-    "/list - список нод\n"
-    "/add - мастер добавления ноды\n"
-    "/check [id] - проверить ноду или все включённые\n"
-    "/blocked <id> - проверить ноду через Cheburcheck\n"
-    "/remove <id> - удалить ноду\n"
-    "/enable <id>, /disable <id> - переключатель проверки\n"
-    "/interval <id> <30s|5m|2h> - интервал опроса ноды\n"
-    f"Опрос запускается каждые {settings.POLL_TICK_SECONDS} с, "
-    f"сводка раз в {settings.SUMMARY_INTERVAL_HOURS} ч, "
-    f"Cheburcheck раз в {settings.CHEBURCHECK_INTERVAL_HOURS} ч "
-    "(кнопка в карточке ноды)"
-)
-
 
 async def show_main(message: Message) -> None:
+    nodes = await list_nodes()
+    enabled = sum(node.enabled for node in nodes)
+    down = sum(node.enabled and not node.last_status for node in nodes)
     await message.answer(
-        f"Мониторинг нод ver. {VERSION}. Выберите действие:", reply_markup=main_inline()
+        format_main_menu(len(nodes), enabled, down),
+        reply_markup=main_inline(),
+        parse_mode=PARSE_MODE,
     )
     await message.answer("Быстрые кнопки:", reply_markup=reply_menu())
 
 
 async def show_help(message: Message) -> None:
-    await message.answer(HELP_TEXT, reply_markup=main_inline())
+    await message.answer(
+        format_help(
+            settings.POLL_TICK_SECONDS,
+            settings.SUMMARY_INTERVAL_HOURS,
+            settings.CHEBURCHECK_INTERVAL_HOURS,
+        ),
+        reply_markup=main_inline(),
+        parse_mode=PARSE_MODE,
+    )
 
 
-async def show_list(event: Message | CallbackQuery) -> None:
+async def show_list(event: Message | CallbackQuery, page: int = 0) -> None:
     nodes = await list_nodes()
-    text = "Список нод:" if nodes else "Ноды не добавлены."
-    await render(event, text, nodes_list(nodes))
+    if not nodes:
+        await render(event, "Ноды не добавлены.", nodes_list(nodes))
+        return
+    pages = max(1, (len(nodes) + NODES_PER_PAGE - 1) // NODES_PER_PAGE)
+    page = max(0, min(page, pages - 1))
+    enabled = sum(node.enabled for node in nodes)
+    text = format_list_header(len(nodes), enabled, page, pages)
+    await render(event, text, nodes_list(nodes, page))
 
 
 async def answer_callback(callback: CallbackQuery, text: str | None = None, **kwargs) -> None:
@@ -70,7 +77,7 @@ async def answer_callback(callback: CallbackQuery, text: str | None = None, **kw
 
 async def edit_message(callback: CallbackQuery, text: str, markup) -> None:
     try:
-        await callback.message.edit_text(text, reply_markup=markup)
+        await callback.message.edit_text(text, reply_markup=markup, parse_mode=PARSE_MODE)
     except TelegramBadRequest as exc:
         if not any(phrase in str(exc).lower() for phrase in STALE_MESSAGE_ERRORS):
             raise
@@ -81,7 +88,7 @@ async def render(event: Message | CallbackQuery, text: str, markup) -> None:
         await answer_callback(event)
         await edit_message(event, text, markup)
     else:
-        await event.answer(text, reply_markup=markup)
+        await event.answer(text, reply_markup=markup, parse_mode=PARSE_MODE)
 
 
 async def render_node(callback: CallbackQuery, node) -> None:
@@ -105,14 +112,16 @@ async def perform_checks(nodes, bot: Bot) -> str:
         status, _, should_notify = await check_node(node)
         if should_notify:
             await send_status_alert(bot, node, status, settings.ALERT_CHAT_ID or settings.ADMIN_ID)
-        results.append(f"#{node.id} {node.name}: {'UP' if status else 'DOWN'}")
+        results.append(format_check_result(node, status))
+    if len(results) > MAX_LIST_ITEMS:
+        results = results[:MAX_LIST_ITEMS] + [f"… и ещё {len(results) - MAX_LIST_ITEMS}"]
     return "\n".join(results)
 
 
 async def start_add_flow(event: Message | CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await state.set_state(AddNode.name)
-    await render(event, "Введите имя ноды:", cancel_keyboard())
+    await render(event, "🖥️ Введите имя ноды:", cancel_keyboard())
 
 
 @router.message(F.text == "Список нод")
@@ -131,7 +140,7 @@ async def button_check_all(message: Message, state: FSMContext, bot: Bot) -> Non
     await state.clear()
     nodes = await list_nodes(enabled_only=True)
     text = await perform_checks(nodes, bot) if nodes else "Нет включённых нод."
-    await message.answer(text, reply_markup=main_inline())
+    await message.answer(text, reply_markup=main_inline(), parse_mode=PARSE_MODE)
 
 
 @router.message(F.text == "Помощь")
@@ -150,14 +159,24 @@ async def cb_cancel(callback: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(F.data == "main")
 async def cb_main(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
+    nodes = await list_nodes()
+    enabled = sum(node.enabled for node in nodes)
+    down = sum(node.enabled and not node.last_status for node in nodes)
     await answer_callback(callback)
-    await edit_message(callback, "Мониторинг нод. Выберите действие:", main_inline())
+    await edit_message(callback, format_main_menu(len(nodes), enabled, down), main_inline())
 
 
 @router.callback_query(F.data == "list")
 async def cb_list(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await show_list(callback)
+
+
+@router.callback_query(F.data.startswith("page:"))
+async def cb_page(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    page = parse_id(callback.data, "page")
+    await show_list(callback, page or 0)
 
 
 @router.callback_query(F.data == "add")
@@ -195,7 +214,7 @@ async def cb_interval(callback: CallbackQuery, state: FSMContext) -> None:
     await answer_callback(callback)
     await edit_message(
         callback,
-        f"Интервал опроса ноды {node.name}.\nВведите, например, 30s, 5m или 2h:",
+        f"⏱ Интервал опроса ноды <b>{esc(node.name)}</b>.\nВведите, например, 30s, 5m или 2h:",
         cancel_keyboard(),
     )
 
@@ -259,7 +278,9 @@ async def cb_delete(callback: CallbackQuery) -> None:
         await answer_callback(callback, "Нода не найдена", show_alert=True)
         return
     await answer_callback(callback)
-    await edit_message(callback, f"Удалить ноду {node.name}?", confirm_delete(node.id))
+    await edit_message(
+        callback, f"🗑 Удалить ноду <b>{esc(node.name)}</b>?", confirm_delete(node.id)
+    )
 
 
 @router.callback_query(F.data.startswith("confirm_delete:"))
@@ -274,11 +295,11 @@ async def cb_confirm_delete(callback: CallbackQuery) -> None:
 async def add_name(message: Message, state: FSMContext) -> None:
     name = (message.text or "").strip()
     if not name:
-        await message.answer("Введите имя ноды:", reply_markup=cancel_keyboard())
+        await message.answer("🖥️ Введите имя ноды:", reply_markup=cancel_keyboard())
         return
     await state.update_data(name=name)
     await state.set_state(AddNode.protocol)
-    await message.answer("Выберите протокол:", reply_markup=protocol_choice())
+    await message.answer("🔌 Выберите протокол:", reply_markup=protocol_choice())
 
 
 @router.callback_query(AddNode.protocol, F.data.startswith("protocol:"))
@@ -287,18 +308,18 @@ async def add_protocol(callback: CallbackQuery, state: FSMContext) -> None:
     await state.update_data(protocol=protocol)
     await state.set_state(AddNode.ip)
     await answer_callback(callback)
-    await edit_message(callback, "Введите IP или хост:", cancel_keyboard())
+    await edit_message(callback, "🌐 Введите IP или хост:", cancel_keyboard())
 
 
 @router.message(AddNode.ip)
 async def add_ip(message: Message, state: FSMContext) -> None:
     ip = (message.text or "").strip()
     if not ip:
-        await message.answer("Введите IP или хост:", reply_markup=cancel_keyboard())
+        await message.answer("🌐 Введите IP или хост:", reply_markup=cancel_keyboard())
         return
     await state.update_data(ip=ip)
     await state.set_state(AddNode.port)
-    await message.answer("Введите порт:", reply_markup=cancel_keyboard())
+    await message.answer("🔢 Введите порт:", reply_markup=cancel_keyboard())
 
 
 @router.message(AddNode.port)
@@ -313,7 +334,7 @@ async def add_port(message: Message, state: FSMContext) -> None:
         return
     await state.update_data(port=port)
     await state.set_state(AddNode.timeout)
-    await message.answer("Таймаут в секундах:", reply_markup=skip_choice("timeout"))
+    await message.answer("⏱️ Таймаут в секундах:", reply_markup=skip_choice("timeout"))
 
 
 @router.callback_query(AddNode.timeout, F.data == "skip:timeout")
@@ -338,7 +359,7 @@ async def add_timeout(message: Message, state: FSMContext) -> None:
 
 async def ask_expected(event: Message | CallbackQuery, state: FSMContext) -> None:
     await state.set_state(AddNode.expected)
-    await render(event, "Ожидаемый текст ответа или пропустите:", skip_choice("expected"))
+    await render(event, "🔎 Ожидаемый текст ответа или пропустите:", skip_choice("expected"))
 
 
 @router.callback_query(AddNode.expected, F.data == "skip:expected")
@@ -365,7 +386,7 @@ async def finish_add(event: Message | CallbackQuery, state: FSMContext) -> None:
         expected_response=data.get("expected_response"),
     )
     await state.clear()
-    text = f"Нода #{node.id} добавлена.\n{format_node_card(node)}"
+    text = f"✅ Нода #{node.id} добавлена.\n{format_node_card(node)}"
     await render(event, text, node_actions(node))
 
 
@@ -386,8 +407,9 @@ async def save_interval(message: Message, state: FSMContext) -> None:
 
     node = await get_node(node_id)
     await message.answer(
-        f"Интервал опроса: {format_interval(amount, unit)}.\n{format_node_card(node)}",
+        f"⏱ Интервал опроса: <b>{format_interval(amount, unit)}</b>.\n{format_node_card(node)}",
         reply_markup=node_actions(node),
+        parse_mode=PARSE_MODE,
     )
 
 

@@ -30,8 +30,11 @@ def test_nodes_list_uses_node_ids():
     node = Node(id=7, name="main", ip="10.0.0.1", port=80, protocol="HTTP", last_status=False)
     data = inline_data(nodes_list([node]))
     assert "node:7" in data
-    assert "main" in [button.text for row in nodes_list([node]).inline_keyboard for button in row][0]
-    assert "\n" in nodes_list([node]).inline_keyboard[0][0].text
+    labels = [button.text for row in nodes_list([node]).inline_keyboard for button in row]
+    assert "main" in labels[0]
+    assert "⏸️" in labels[0]
+    assert "🌐" in labels[0]
+    assert "1m" in labels[0]
 
 
 def test_node_actions_toggle_label():
@@ -41,9 +44,26 @@ def test_node_actions_toggle_label():
     assert "interval:1" in inline_data(node_actions(enabled))
     assert "blocked:1" in inline_data(node_actions(enabled))
     labels = [button.text for row in node_actions(enabled).inline_keyboard for button in row]
-    assert "Выключить" in labels
+    assert "⏸️ Выключить" in labels
     labels = [button.text for row in node_actions(disabled).inline_keyboard for button in row]
-    assert "Включить" in labels
+    assert "🔄 Включить" in labels
+
+
+def test_nodes_list_paginates_after_twenty_nodes():
+    nodes = [
+        Node(id=index, name=f"node{index}", ip="1.1.1.1", port=80, protocol="HTTP")
+        for index in range(1, 23)
+    ]
+    first_page = nodes_list(nodes, 0)
+    data = inline_data(first_page)
+    assert "page:1" in data
+    assert "node:20" in data
+    assert "node:21" not in data
+    second_page = nodes_list(nodes, 1)
+    data = inline_data(second_page)
+    assert "page:0" in data
+    assert "node:21" in data
+    assert len(second_page.inline_keyboard[-4]) == 2
 
 
 def test_wizard_keyboards():

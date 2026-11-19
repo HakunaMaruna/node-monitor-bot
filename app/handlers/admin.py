@@ -7,6 +7,7 @@ from app.config import settings
 from app.handlers import menu
 from app.services.cheburcheck import refresh_node_blocked
 from app.services.nodes import add_node, delete_node, get_node, list_nodes, set_enabled, set_interval
+from app.utils.design import PARSE_MODE
 from app.utils.formatting import format_node_card
 from app.version import VERSION
 from app.utils.intervals import format_interval, parse_interval
@@ -70,7 +71,9 @@ async def cmd_add(message: Message, command: CommandObject, state: FSMContext) -
         timeout_sec=timeout,
         expected_response=" ".join(parts[5:]) or None,
     )
-    await message.answer(f"Нода #{node.id} добавлена.\n{format_node_card(node)}")
+    await message.answer(
+        f"✅ Нода #{node.id} добавлена.\n{format_node_card(node)}", parse_mode=PARSE_MODE
+    )
 
 
 @router.message(Command("list"))
@@ -127,7 +130,7 @@ async def cmd_check(message: Message, command: CommandObject, state: FSMContext,
             await message.answer("Нет включённых нод.")
             return
 
-    await message.answer(await menu.perform_checks(nodes, bot))
+    await message.answer(await menu.perform_checks(nodes, bot), parse_mode=PARSE_MODE)
 
 
 @router.message(Command("blocked"))
@@ -149,7 +152,11 @@ async def cmd_check_blocked(
         alert_chat_id=settings.ALERT_CHAT_ID or settings.ADMIN_ID,
     )
     updated = await get_node(node_id)
-    await message.answer(f"{verdict}\n\n{format_node_card(updated)}", reply_markup=menu.node_actions(updated))
+    await message.answer(
+        f"{verdict}\n\n{format_node_card(updated)}",
+        reply_markup=menu.node_actions(updated),
+        parse_mode=PARSE_MODE,
+    )
 
 
 @router.message(Command("interval"))
@@ -169,7 +176,8 @@ async def cmd_interval(message: Message, command: CommandObject, state: FSMConte
 
     node = await get_node(node_id)
     await message.answer(
-        f"Интервал опроса: {format_interval(amount, unit)}.\n{format_node_card(node)}"
+        f"⏱ Интервал опроса: <b>{format_interval(amount, unit)}</b>.\n{format_node_card(node)}",
+        parse_mode=PARSE_MODE,
     )
 
 
