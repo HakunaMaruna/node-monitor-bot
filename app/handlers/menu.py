@@ -461,7 +461,9 @@ async def cb_tspu_full(callback: CallbackQuery) -> None:
             report = f"Ошибка диагностики: {exc}"
         for chunk in _chunks(report):
             try:
-                await callback.bot.send_message(callback.from_user.id, chunk)
+                await callback.bot.send_message(
+                    callback.from_user.id, chunk, parse_mode=PARSE_MODE
+                )
             except Exception:
                 pass
         try:
@@ -494,13 +496,18 @@ async def cb_tspu_quick(callback: CallbackQuery) -> None:
     target_message = callback.message
     if target_message is None:
         for chunk in _chunks(report):
-            await callback.bot.send_message(callback.from_user.id, chunk)
+            await callback.bot.send_message(
+                callback.from_user.id, chunk, parse_mode=PARSE_MODE
+            )
         await callback.bot.send_message(
-            callback.from_user.id, "Диагностика завершена.", reply_markup=node_actions(node)
+            callback.from_user.id,
+            "Диагностика завершена.",
+            reply_markup=node_actions(node),
+            parse_mode=PARSE_MODE,
         )
         return
     for chunk in _chunks(report):
-        await target_message.answer(chunk)
+        await target_message.answer(chunk, parse_mode=PARSE_MODE)
     await target_message.answer("Диагностика завершена.", reply_markup=node_actions(node))
 
 

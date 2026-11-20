@@ -5,6 +5,8 @@ from urllib.parse import quote
 
 import aiohttp
 
+from app.utils.design import esc
+
 
 BLOCKED_TEST_IP = "173.194.222.113"
 SNI_TEST_IP = "77.88.55.242"
@@ -158,13 +160,13 @@ def _decode_dns_name(data: bytes, offset: int) -> tuple[str, int]:
 
 def _sync_udp_dns_resolve(server: str, domain: str, timeout: int = 3) -> str:
     query = b""
-    query += b"\x12\x34"  # id
-    query += b"\x01\x00"  # flags: standard query, recursion desired
-    query += b"\x00\x01"  # qdcount
-    query += b"\x00\x00\x00\x00\x00\x00"  # an/ns/ar count
+    query += b"\x12\x34"
+    query += b"\x01\x00"
+    query += b"\x00\x01"
+    query += b"\x00\x00\x00\x00\x00\x00"
     query += _encode_dns_name(domain)
-    query += b"\x00\x01"  # type A
-    query += b"\x00\x01"  # class IN
+    query += b"\x00\x01"
+    query += b"\x00\x01"
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.settimeout(timeout)
@@ -189,7 +191,7 @@ def _sync_udp_dns_resolve(server: str, domain: str, timeout: int = 3) -> str:
         if offset + 10 > len(data):
             return ""
         rtype = int.from_bytes(data[offset:offset + 2], "big")
-        offset += 8  # type, class, ttl
+        offset += 8
         rdlength = int.from_bytes(data[offset:offset + 2], "big")
         offset += 2
         if rtype == 1 and rdlength == 4:
@@ -234,41 +236,53 @@ async def _cgnat_status(external_ip: str) -> bool:
         return False
 
 
-def _format_bool(value: bool) -> str:
-    return "✅ да" if value else "❌ нет"
+def _ok(value: bool) -> str:
+    return "✅" if value else "❌"
+
+
+def _line(label: str, value: str) -> str:
+    return f"  <b>{esc(label)}:</b> {value}"
 
 
 async def run_tspu_quick(node) -> str:
     target = node.ip
-    lines = [f"🛡️ Диагностика ТСПУ для ноды #{node.id} ({target})"]
+    lines = [
+        "🛡️ <b>ДИАГНОСТИКА ТСПУ</b>",
+        f"Нода <b>#{node.id}</b> · {esc(target)}",
+        "━" * 28,
+    ]
 
     # 1. Режим ТСПУ
     icmp_ok = await _ping(BLOCKED_TEST_IP)
     tcp_ok, tcp_reason = await _tcp_open(BLOCKED_TEST_IP, 443)
-    lines.append("")
-    lines.append("🧪 Режим ТСПУ (тестовый IP 173.194.222.113):")
-    lines.append(f"  ICMP: {_format_bool(icmp_ok)}")
-    lines.append(f"  TCP 443: {_format_bool(tcp_ok)} ({tcp_reason})")
+    lines.extend(
+        [
+            "",
+            "🧪 <b>Режим ТСПУ</b> <i>(173.194.222.113)</i>",
+            f"  {_ok(icmp_ok)} ICMP: {'доступен' if icmp_ok else 'недоступен'}",
+            f"  {_ok(tcp_ok)} TCP 443: {esc(tcp_reason)}",
+        ]
+    )
     if icmp_ok and not tcp_ok:
-        lines.append("  Вывод: похоже на белые списки (allowlist)")
+        lines.append("  ➜ похоже на <b>белые списки (allowlist)</b>")
     elif not icmp_ok and not tcp_ok:
-        lines.append("  Вывод: чёрные списки или полная блокировка")
+        lines.append("  ➜ похоже на <b>чёрные списки / полную блокировку</b>")
     elif icmp_ok and tcp_ok:
-        lines.append("  Вывод: блокировок не обнаружено")
+        lines.append("  ➜ <b>блокировок не обнаружено</b>")
 
     # 2. Доступность целевого сервера
-    lines.append("")
-    lines.append(f"🖥️ Сервер {target}:")
+    lines.extend(["", f"🖥️ <b>Сервер {esc(target)}</b>"])
     for port in (22, 80, 443, 8080, 8443):
         ok, reason = await _tcp_open(target, port)
-        lines.append(f"  Порт {port}: {'открыт' if ok else 'закрыт/фильтр'} ({reason})")
+        lines.append(f"  {_ok(ok)} Порт {port}: {esc(reason)}")
     scheme = "https" if str(node.protocol).upper() == "HTTPS" else "http"
     status = await _http_status(f"{scheme}://{target}:{node.port}")
-    lines.append(f"  HTTP {scheme}://{target}:{node.port}: {status}")
+    lines.append(
+        f"  {_ok(status.isdigit() and int(status) < 400)} HTTP {scheme}://{esc(target)}:{node.port}: {esc(status)}"
+    )
 
     # 3. SNI-фильтрация
-    lines.append("")
-    lines.append(f"🎭 SNI-фильтрация ({SNI_TEST_IP}):")
+    lines.extend(["", f"🎭 <b>SNI-фильтрация</b> <i>({SNI_TEST_IP})</i>"])
     for sni, name in (
         ("ya.ru", "Яндекс"),
         ("google.com", "Google"),
@@ -277,20 +291,17 @@ async def run_tspu_quick(node) -> str:
         ("vk.com", "VK"),
     ):
         ok, reason = await _sni_check(SNI_TEST_IP, sni)
-        lines.append(f"  {name} ({sni}): {'пропущен' if ok else reason}")
+        lines.append(f"  {_ok(ok)} {esc(name)} ({esc(sni)}): {'пропущен' if ok else esc(reason)}")
 
     # 4. Внешние DNS
-    lines.append("")
-    lines.append("🌐 Внешние DNS (ya.ru):")
+    lines.extend(["", "🌐 <b>Внешние DNS</b> <i>(ya.ru)</i>"])
     for server in DNS_SERVERS:
         ip = await _udp_dns_resolve(server, "ya.ru")
-        lines.append(f"  {server}: {ip if ip else 'нет ответа'}")
+        lines.append(f"  {_ok(bool(ip))} {esc(server)} → {esc(ip) if ip else 'нет ответа'}")
 
     # 5. Расширенная диагностика блокировок
-    lines.append("")
-    lines.append("🔬 Блокировки (ya.ru / twitter.com):")
+    lines.extend(["", "🔬 <b>Блокировки</b> <i>(ya.ru / twitter.com)</i>"])
     for domain in ("ya.ru", "twitter.com"):
-        sys_ip = await _run_in_executor(socket.gethostbyname, domain) if False else ""
         try:
             sys_ip = await _run_in_executor(lambda d: socket.gethostbyname(d), domain)
         except OSError:
@@ -301,23 +312,31 @@ async def run_tspu_quick(node) -> str:
         if tcp_domain_ok:
             ok, reason = await _sni_check(domain, domain)
             tls_result = "TLS ok" if ok else reason
-        lines.append(f"  {domain}:")
-        lines.append(f"    DNS системный: {sys_ip or 'нет ответа'}")
-        lines.append(f"    DNS DoH: {doh_ip or 'нет ответа'}")
-        lines.append(f"    TCP 443: {'открыт' if tcp_domain_ok else 'закрыт/фильтр'}")
+        lines.extend(
+            [
+                f"  <b>{esc(domain)}</b>",
+                f"    DNS системный: {esc(sys_ip) if sys_ip else 'нет ответа'}",
+                f"    DNS DoH: {esc(doh_ip) if doh_ip else 'нет ответа'}",
+                f"    TCP 443: {'открыт' if tcp_domain_ok else 'закрыт/фильтр'}",
+            ]
+        )
         if tcp_domain_ok:
-            lines.append(f"    TLS: {tls_result}")
+            lines.append(f"    TLS: {esc(tls_result)}")
 
     # 6. NAT
     external_ip = await _fetch_text("https://api.ipify.org")
     if not external_ip:
         external_ip = await _fetch_text("https://ifconfig.me/ip")
     cgnat = await _cgnat_status(external_ip) if external_ip else False
-    lines.append("")
-    lines.append("🌐 NAT:")
-    lines.append(f"  Внешний IP: {external_ip or 'не определён'}")
-    lines.append(f"  Локальный IP: {_local_ip()}")
-    lines.append(f"  CGNAT: {'да' if cgnat else 'нет'}")
+    lines.extend(
+        [
+            "",
+            "🌐 <b>NAT</b>",
+            f"  Внешний IP: <code>{esc(external_ip) if external_ip else 'не определён'}</code>",
+            f"  Локальный IP: <code>{esc(_local_ip())}</code>",
+            f"  CGNAT: {'да' if cgnat else 'нет'}",
+        ]
+    )
 
     return "\n".join(lines)
 
@@ -325,55 +344,65 @@ async def run_tspu_quick(node) -> str:
 async def run_tspu_full(node) -> str:
     base = await run_tspu_quick(node)
     target = node.ip
-    lines = [base, "", "🔬 Расширенная диагностика"]
+    lines = [base, "", "━" * 28, "🔬 <b>РАСШИРЕННАЯ ДИАГНОСТИКА</b>", "━" * 28]
 
     # Доступность сайтов
-    lines.append("")
-    lines.append("📡 Доступность сайтов:")
+    lines.extend(["", "📡 <b>Доступность сайтов</b>"])
     for site in CHECKED_SITES:
         status = await _http_status(f"https://{site}")
-        lines.append(f"  {site}: HTTP {status}")
+        ok = status.isdigit() and int(status) < 400
+        lines.append(f"  {_ok(ok)} {esc(site)}: HTTP {esc(status)}")
 
     # Детальный анализ портов
-    lines.append("")
-    lines.append(f"📊 Детальный анализ портов {target}:")
+    service_names = {
+        22: "SSH",
+        80: "HTTP",
+        443: "HTTPS",
+        3306: "MySQL",
+        5432: "PostgreSQL",
+        8080: "HTTP-alt",
+        8443: "HTTPS-alt",
+    }
+    lines.extend(["", f"📊 <b>Детальный анализ портов</b> <i>({esc(target)})</i>"])
     for port in DETAILED_PORTS:
-        service = {
-            22: "SSH",
-            80: "HTTP",
-            443: "HTTPS",
-            3306: "MySQL",
-            5432: "PostgreSQL",
-            8080: "HTTP-alt",
-            8443: "HTTPS-alt",
-        }.get(port, "TCP")
         ok, reason = await _tcp_open(target, port)
-        lines.append(f"  {port:<5} {service:<11} {'открыт' if ok else 'закрыт/фильтр'} ({reason})")
+        lines.append(
+            f"  {_ok(ok)} {port:<5} {service_names.get(port, 'TCP'):<11} {esc(reason)}"
+        )
 
     # UDP
-    lines.append("")
-    lines.append(f"📦 UDP {target}:")
+    lines.extend(["", f"📦 <b>UDP</b> <i>({esc(target)})</i>"])
     dns_udp = await _udp_dns_resolve(target, "ya.ru", timeout=2)
-    lines.append(f"  UDP 53 (DNS): {'отвечает' if dns_udp else 'нет ответа (нормально, если не DNS-сервер)'}")
-    lines.append("  UDP 443/8443/51820: без ответа на пустые пакеты — это норма")
+    lines.append(
+        f"  {_ok(bool(dns_udp))} UDP 53 (DNS): "
+        + (f"отвечает → {esc(dns_udp)}" if dns_udp else "нет ответа (нормально, если не DNS-сервер)")
+    )
+    lines.append("  ℹ️ UDP 443/8443/51820: без ответа на пустые пакеты — это норма")
 
     # Split DNS
-    lines.append("")
+    lines.extend(["", "🔍 <b>Split DNS / утечка</b>"])
     ya_peer = await _peer_ip("https://ya.ru")
     ifconfig_ip = await _fetch_text("https://ifconfig.me/ip")
-    lines.append("🔍 Split DNS / утечка:")
-    lines.append(f"  ya.ru видит IP: {ya_peer or 'не определён'}")
-    lines.append(f"  ifconfig.me видит IP: {ifconfig_ip or 'не определён'}")
+    lines.extend(
+        [
+            f"  ya.ru видит IP: <code>{esc(ya_peer) if ya_peer else 'не определён'}</code>",
+            f"  ifconfig.me видит IP: <code>{esc(ifconfig_ip) if ifconfig_ip else 'не определён'}</code>",
+        ]
+    )
     if ya_peer and ifconfig_ip:
         if ya_peer != ifconfig_ip:
-            lines.append("  Вывод: split DNS/туннелирование работает")
+            lines.append("  ➜ split DNS/туннелирование работает")
         else:
-            lines.append("  Вывод: возможна утечка (оба видят один IP)")
+            lines.append("  ➜ возможна утечка (оба видят один IP)")
 
     # My IP
-    lines.append("")
-    lines.append("🌍 Ваш IP:")
-    lines.append(f"  Внешний: {ifconfig_ip or 'не определён'}")
-    lines.append(f"  Локальный: {_local_ip()}")
+    lines.extend(
+        [
+            "",
+            "🌍 <b>Ваш IP</b>",
+            f"  Внешний: <code>{esc(ifconfig_ip) if ifconfig_ip else 'не определён'}</code>",
+            f"  Локальный: <code>{esc(_local_ip())}</code>",
+        ]
+    )
 
     return "\n".join(lines)
