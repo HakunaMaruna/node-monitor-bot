@@ -10,6 +10,7 @@ from app.models.node import naive_utcnow
 from app.services.cheburcheck import refresh_node_blocked
 from app.services.monitor import check_node
 from app.services.notifier import send_status_alert
+from app.services.cheburcheck import extract_target, probe_check
 from app.services.nodes import add_node, delete_node, get_node, list_nodes, set_enabled, set_interval
 from app.services.tspu import run_tspu_full, run_tspu_quick
 from app.utils.design import MAX_LIST_ITEMS, NODES_PER_PAGE, PARSE_MODE, esc
@@ -19,6 +20,7 @@ from app.utils.formatting import (
     format_list_header,
     format_main_menu,
     format_node_card,
+    format_probe_result,
 )
 from app.utils.intervals import format_interval, parse_interval
 from app.utils.keyboards import (
@@ -515,6 +517,32 @@ def _chunks(text: str, size: int = 3900) -> list[str]:
     if not text:
         return [""]
     return [text[index:index + size] for index in range(0, len(text), size)]
+
+
+@router.callback_query(F.data.startswith("probe:"))
+async def cb_probe(callback: CallbackQuery) -> None:
+    node_id = parse_id(callback.data, "probe")
+    node = await get_node(node_id) if node_id is not None else None
+    if node is None:
+        await answer_callback(callback, "Нода не найдена", show_alert=True)
+        return
+    target = extract_target(node)
+    if target is None:
+        await answer_callback(callback, "Не удалось определить цель", show_alert=True)
+        return
+    await answer_callback(callback, "Динамическая проверка запущена")
+    try:
+        payload = await probe_check(target)
+        report = format_probe_result(node, payload)
+    except Exception as exc:
+        report = f"Ошибка динамической проверки: {esc(exc)}"
+    target_message = callback.message
+    if target_message is None:
+        await callback.bot.send_message(
+            callback.from_user.id, report, parse_mode=PARSE_MODE
+        )
+        return
+    await target_message.answer(report, parse_mode=PARSE_MODE)
 
 
 @router.callback_query()

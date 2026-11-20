@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 
 import aiohttp
@@ -114,3 +115,112 @@ async def refresh_nodes_blocked(
         )
         results.append(message)
     return results
+
+
+async def probe_check(
+    target: str,
+    *,
+    api_token: str | None = None,
+    timeout_sec: int | None = None,
+    base_url: str | None = None,
+) -> dict:
+    base = (base_url or settings.CHEBURCHECK_BASE_URL).rstrip("/")
+    token = api_token if api_token is not None else settings.CHEBURCHECK_API_TOKEN
+    token = (token or "").strip()
+    if not token:
+        raise CheburcheckError("API-токен Cheburcheck не настроен")
+
+    timeout = settings.CHEBURCHECK_TIMEOUT_SEC if timeout_sec is None else timeout_sec
+    client_timeout = aiohttp.ClientTimeout(total=max(timeout, 30))
+
+    # Сначала получаем подписанный контекст проверки.
+    try:
+        async with aiohttp.ClientSession(timeout=client_timeout) as session:
+            async with session.get(
+                base + "/check",
+                params={"target": target},
+                headers={"Accept": "application/json"},
+            ) as response:
+                if response.status >= 400:
+                    raise CheburcheckError(f"Cheburcheck вернул HTTP {response.status}")
+                payload = await response.json(content_type=None)
+    except CheburcheckError:
+        raise
+    except (aiohttp.ClientError, asyncio.TimeoutError, OSError, ValueError) as exc:
+        raise CheburcheckError(f"ошибка запроса к Cheburcheck: {exc}") from exc
+
+    context_id = payload.get("id") if isinstance(payload, dict) else None
+    if not context_id:
+        raise CheburcheckError("Cheburcheck не вернул контекст для динамической проверки")
+
+    url = f"{base}/probe/{context_id}"
+    results: list[dict] = []
+    started: dict | None = None
+    done: dict | None = None
+    event_name = "message"
+    data_lines: list[str] = []
+
+    def process_event() -> None:
+        nonlocal started, done
+        if not data_lines:
+            return
+        raw_data = "\n".join(data_lines)
+        try:
+            data = json.loads(raw_data)
+        except json.JSONDecodeError:
+            return
+        if event_name == "started" and isinstance(data, dict):
+            started = data
+        elif event_name == "result" and isinstance(data, dict):
+            results.append(data)
+        elif event_name == "done" and isinstance(data, dict):
+            done = data
+
+    try:
+        async with aiohttp.ClientSession(timeout=client_timeout) as session:
+            async with session.get(
+                url,
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Accept": "text/event-stream",
+                },
+            ) as response:
+                if response.status == 401:
+                    raise CheburcheckError("неверный или просроченный API-токен Cheburcheck")
+                if response.status == 403:
+                    raise CheburcheckError("нет доступа к динамическим сканерам Cheburcheck")
+                if response.status >= 400:
+                    raise CheburcheckError(f"Cheburcheck probe вернул HTTP {response.status}")
+
+                while True:
+                    raw = await response.content.readline()
+                    if not raw:
+                        break
+                    line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
+                    if line == "":
+                        process_event()
+                        event_name = "message"
+                        data_lines = []
+                    elif line.startswith("event:"):
+                        event_name = line[6:].strip() or "message"
+                    elif line.startswith("data:"):
+                        data_lines.append(line[5:].strip())
+                process_event()
+    except CheburcheckError:
+        raise
+    except (aiohttp.ClientError, asyncio.TimeoutError, OSError, ValueError) as exc:
+        raise CheburcheckError(f"ошибка динамической проверки Cheburcheck: {exc}") from exc
+
+    verdicts: set[str] = set()
+    for result in results:
+        for verdict in result.get("verdicts") or []:
+            verdicts.add(str(verdict))
+
+    return {
+        "target": target,
+        "context_id": context_id,
+        "online_probes": (started or {}).get("online_probes"),
+        "response_count": (done or {}).get("response_count"),
+        "results": results,
+        "verdicts": sorted(verdicts),
+    }

@@ -401,3 +401,42 @@ def format_summary(nodes: list[Node], now: datetime | None = None) -> str:
             else:
                 lines.append(_node_block(item, current))
     return "\n".join(lines)
+
+VERDICT_TEXT = {
+    "ok": "OK",
+    "uncertain": "неопределённо",
+    "cdn_block": "блокировка CDN",
+    "sni_block": "SNI-блокировка",
+    "dns_spoofing": "DNS spoofing",
+    "tspu_block": "ТСПУ-блокировка",
+    "whitelist": "белый список",
+}
+
+
+def format_probe_result(node: Node, payload: dict) -> str:
+    lines = [
+        f"{ICON['shield']} <b>ДИНАМИЧЕСКАЯ ПРОВЕРКА CHEBURCHECK</b>",
+        f"{ICON['node']} Нода #{node.id} · {esc(node.name)}",
+        f"{ICON['link']} Цель: <code>{esc(payload.get('target', '—'))}</code>",
+        f"{ICON['info']} Сканеров ответило: <b>{payload.get('response_count', 0)}/{payload.get('online_probes', '?')}</b>",
+    ]
+    verdicts = payload.get("verdicts") or []
+    if verdicts:
+        lines.extend(["", f"{ICON['shield']} <b>ВЕРДИКТЫ</b>"])
+        for verdict in verdicts:
+            lines.append(f"  • {esc(VERDICT_TEXT.get(verdict, verdict))}")
+    else:
+        lines.extend(["", "Вердикты не получены."])
+
+    results = payload.get("results") or []
+    if results:
+        lines.extend(["", f"{ICON['info']} <b>СКАНЕРЫ</b>"])
+        for result in results[:10]:
+            probe_id = result.get("probe_id", "?")
+            region = result.get("region") or result.get("provider") or "—"
+            verdict_list = ", ".join(result.get("verdicts") or []) or "—"
+            cached = " (кеш)" if result.get("cached") else ""
+            lines.append(f"  #{esc(probe_id)} {esc(region)}{cached}: {esc(verdict_list)}")
+        if len(results) > 10:
+            lines.append(f"  … и ещё {len(results) - 10}")
+    return "\n".join(lines)
