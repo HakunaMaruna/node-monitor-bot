@@ -105,6 +105,18 @@ def node_actions(node: Node) -> InlineKeyboardMarkup:
                     callback_data=f"blocked:{node.id}",
                 )
             ],
+            [
+                InlineKeyboardButton(
+                    text=f"{ICON['shield']} Диагностика ТСПУ",
+                    callback_data=f"tspu:{node.id}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=f"{ICON['search']} Расширенная диагностика",
+                    callback_data=f"tspu_full:{node.id}",
+                )
+            ],
             [InlineKeyboardButton(text=toggle, callback_data=f"toggle:{node.id}")],
             [
                 InlineKeyboardButton(

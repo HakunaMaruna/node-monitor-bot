@@ -11,6 +11,7 @@ from app.services.cheburcheck import refresh_node_blocked
 from app.services.monitor import check_node
 from app.services.notifier import send_status_alert
 from app.services.nodes import add_node, delete_node, get_node, list_nodes, set_enabled, set_interval
+from app.services.tspu import run_tspu_full, run_tspu_quick
 from app.utils.design import MAX_LIST_ITEMS, NODES_PER_PAGE, PARSE_MODE, esc
 from app.utils.formatting import (
     format_check_result,
@@ -442,6 +443,71 @@ async def save_interval(message: Message, state: FSMContext) -> None:
         reply_markup=node_actions(node),
         parse_mode=PARSE_MODE,
     )
+
+
+@router.callback_query(F.data.startswith("tspu_full:"))
+async def cb_tspu_full(callback: CallbackQuery) -> None:
+    node_id = parse_id(callback.data, "tspu_full")
+    node = await get_node(node_id) if node_id is not None else None
+    if node is None:
+        await answer_callback(callback, "Нода не найдена", show_alert=True)
+        return
+    await answer_callback(callback, "Расширенная диагностика запущена")
+
+    async def worker() -> None:
+        try:
+            report = await run_tspu_full(node)
+        except Exception as exc:
+            report = f"Ошибка диагностики: {exc}"
+        for chunk in _chunks(report):
+            try:
+                await callback.bot.send_message(callback.from_user.id, chunk)
+            except Exception:
+                pass
+        try:
+            await callback.bot.send_message(
+                callback.from_user.id, "Диагностика завершена.", reply_markup=node_actions(node)
+            )
+        except Exception:
+            pass
+
+    asyncio.create_task(worker())
+    if callback.message is not None:
+        try:
+            await callback.message.answer("Расширенная диагностика запущена в фоне.")
+        except Exception:
+            pass
+
+
+@router.callback_query(F.data.startswith("tspu:"))
+async def cb_tspu_quick(callback: CallbackQuery) -> None:
+    node_id = parse_id(callback.data, "tspu")
+    node = await get_node(node_id) if node_id is not None else None
+    if node is None:
+        await answer_callback(callback, "Нода не найдена", show_alert=True)
+        return
+    await answer_callback(callback, "Диагностика запущена")
+    try:
+        report = await run_tspu_quick(node)
+    except Exception as exc:
+        report = f"Ошибка диагностики: {exc}"
+    target_message = callback.message
+    if target_message is None:
+        for chunk in _chunks(report):
+            await callback.bot.send_message(callback.from_user.id, chunk)
+        await callback.bot.send_message(
+            callback.from_user.id, "Диагностика завершена.", reply_markup=node_actions(node)
+        )
+        return
+    for chunk in _chunks(report):
+        await target_message.answer(chunk)
+    await target_message.answer("Диагностика завершена.", reply_markup=node_actions(node))
+
+
+def _chunks(text: str, size: int = 3900) -> list[str]:
+    if not text:
+        return [""]
+    return [text[index:index + size] for index in range(0, len(text), size)]
 
 
 @router.callback_query()

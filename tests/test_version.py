@@ -7,8 +7,8 @@ from app.version import VERSION
 
 def test_version_is_1_0():
     version_file = Path(__file__).resolve().parents[1] / "VERSION"
-    assert version_file.read_text(encoding="utf-8").strip() == "1.7"
-    assert VERSION == "1.7"
+    assert version_file.read_text(encoding="utf-8").strip() == "1.8"
+    assert VERSION == "1.8"
 
 
 def test_version_command_answers_with_version():
@@ -28,4 +28,4 @@ def test_version_command_answers_with_version():
 
     asyncio.run(cmd_version(message, state))
 
-    assert message.answers == ["Node Monitor Bot ver. 1.7"]
+    assert message.answers == ["Node Monitor Bot ver. 1.8"]

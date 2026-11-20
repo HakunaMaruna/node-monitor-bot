@@ -67,5 +67,8 @@ def blocked_icon(blocked: bool | None) -> str:
     return ICON["blocked"] if blocked else ICON["ok"]
 
 
-def button_text(value: object, limit: int = 42) -> str:
-    return " ".join(str(value).split())[:limit]
+def button_text(value: object, limit: int | None = None) -> str:
+    text = " ".join(str(value).split())
+    if limit is not None:
+        text = text[:limit]
+    return text
