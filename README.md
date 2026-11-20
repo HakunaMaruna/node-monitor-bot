@@ -14,16 +14,17 @@
 - Метрики проверок: задержка, причина ошибки, число неудач подряд, uptime за 24 часа и мини-график последних проверок в карточке; DOWN-алерты тоже показывают причину, задержку и счётчик неудач.
 - Таймер статуса: карточка показывает, с какого времени нода в текущем состоянии и как долго она недоступна; DOWN-алерты, сводка и алерт восстановления сообщают длительность простоя.
 - Устойчивость к устаревшим кнопкам и неизвестным сообщениям: бот отвечает подсказкой и обновляет меню.
-- Автообновление на хосте (`updater.py`): бэкап кода и БД отправляется в Telegram перед обновлением, есть откат из архива. Updater не запускается при незакоммиченных изменениях и проверяет, что `VERSION` совпадает с тегом. Текущая версия — `ver. 1.7`.
+- Автообновление на хосте (`updater.py`): бэкап кода и БД отправляется в Telegram перед обновлением, есть откат из архива. Updater не запускается при незакоммиченных изменениях и проверяет, что `VERSION` совпадает с тегом. Текущая версия — `ver. 1.8`.
 - Повторные `DOWN`-алерты подавляются на `ALERT_REPEAT_MINUTES` минут; `0` отключает подавление. Восстановление всегда приходит сразу.
 - Результаты периодической проверки Cheburcheck отправляются в `SUMMARY_CHAT_ID` (или `ADMIN_ID`) компактным отчётом.
+- В карточке ноды доступны быстрая и расширенная диагностика ТСПУ: режим ТСПУ, порты, SNI, DNS, блокировки, NAT, split DNS и другие проверки без внешних утилит.
 
 ## Кнопки и команды бота
 
 `/start` открывает меню с inline-кнопками и закрепляет быстрые кнопки внизу чата:
 "Список нод", "Добавить ноду", "Проверить все", "Помощь". Мастер добавления спрашивает имя,
 протокол, адрес, порт, таймаут и ожидаемый текст ответа; таймаут и текст можно пропустить.
-В карточке ноды доступны кнопки проверки, `Cheburcheck: проверить`, изменения интервала опроса, включения/выключения и удаления с подтверждением. Карточка показывает иконку статуса, протокол, адрес, интервал и время следующей проверки, время последней проверки UTC с относительным временем, задержку, причину ошибки, uptime 24h со sparkline и отдельный блок Cheburcheck. Сводка дополнительно показывает средний uptime 24h. Список нод разбит на страницы по 20 записей.
+В карточке ноды доступны кнопки проверки, `Cheburcheck: проверить`, `Диагностика ТСПУ`, `Расширенная диагностика`, изменения интервала опроса, включения/выключения и удаления с подтверждением. Карточка показывает иконку статуса, протокол, адрес, интервал и время следующей проверки, время последней проверки UTC с относительным временем, задержку, причину ошибки, uptime 24h со sparkline и отдельный блок Cheburcheck. Сводка дополнительно показывает средний uptime 24h. Список нод разбит на страницы по 20 записей.
 
 Старые команды тоже работают:
 
@@ -64,6 +65,84 @@ python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 python -m app.main
+```
+
+## Подробная установка
+
+### Локально (без Docker)
+
+1. Установите Python 3.11+ и зависимости:
+   ```bash
+   python -m venv venv
+   source venv/bin/activate
+   pip install -r requirements.txt
+   ```
+2. Создайте `.env` на основе `.env.example`:
+   ```bash
+   cp .env.example .env
+   ```
+   Заполните минимум:
+   - `BOT_TOKEN` — токен бота от @BotFather;
+   - `ADMIN_ID` — ваш Telegram ID;
+   - `DB_URL` — путь к SQLite, например `sqlite+aiosqlite:///./data/nodes.db`.
+3. Создайте каталог данных, если он указан в `DB_URL`:
+   ```bash
+   mkdir -p data
+   ```
+4. Запустите бота:
+   ```bash
+   python -m app.main
+   ```
+   База данных создаётся автоматически при первом запуске.
+
+### Docker Compose
+
+```bash
+cp .env.example .env
+nano .env
+docker compose up -d --build
+```
+
+Готовый образ:
+```bash
+docker pull ghcr.io/hakunamaruna/node-monitor-bot:latest
+```
+
+### Сервер (systemd, без Docker)
+
+```bash
+sudo mkdir -p /opt/node-monitor-bot
+sudo chown -R $USER:$USER /opt/node-monitor-bot
+git clone https://github.com/HakunaMaruna/node-monitor-bot.git /opt/node-monitor-bot
+cd /opt/node-monitor-bot
+python3 -m venv venv
+./venv/bin/pip install -r requirements.txt
+cp .env.example .env
+nano .env
+sudo cp deploy/node-monitor-updater.service /etc/systemd/system/node-monitor-bot.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now node-monitor-bot.service
+```
+
+Проверка:
+```bash
+systemctl status node-monitor-bot.service
+journalctl -u node-monitor-bot.service -f
+```
+
+### Бэкап и обновление
+
+Перед обновлением сохраните код и БД:
+```bash
+tar -czf node-monitor-bot-backup-$(date +%Y%m%d-%H%M%S).tar.gz /opt/node-monitor-bot
+```
+
+Обновление вручную:
+```bash
+cd /opt/node-monitor-bot
+git pull
+./venv/bin/pip install -r requirements.txt
+sudo systemctl restart node-monitor-bot.service
 ```
 
 ## Тесты

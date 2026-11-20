@@ -27,6 +27,7 @@ Telegram-бот для периодической проверки нод (TCP/H
 │   ├── utils/history.py         история проверок: 24ч окно, uptime, сериализация JSON
 │   ├── utils/formatting.py      блочное форматирование карточки, алертов, сводки, отчётов Cheburcheck, меню и справки
 │   ├── utils/intervals.py       разбор и форматирование интервалов s/m/h
+│   ├── services/tspu.py         быстрая и расширенная диагностика ТСПУ для нод
 │   └── utils/keyboards.py       reply/inline-клавиатуры, иконки и пагинация списка
 ├── tests/                       pytest: ping, CRUD, monitor, cheburcheck, scheduler, updater, middleware, keyboards, formatting, history
 ├── conftest.py                  тестовые env-переменные и in-memory SQLite
