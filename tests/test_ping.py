@@ -4,7 +4,7 @@ import pytest
 from aiohttp import web
 
 from app.models.node import Node
-from app.services.ping import PingService, build_check_url
+from app.services.ping import PingService, build_check_url, is_blocked_ip, target_allowed
 
 
 async def test_check_tcp_success():
@@ -41,6 +41,11 @@ async def http_port():
     application = web.Application()
     application.router.add_get("/", handler)
     application.router.add_get("/bad", bad_handler)
+
+    async def big_handler(request):
+        return web.Response(text="x" * 100_000)
+
+    application.router.add_get("/big", big_handler)
     runner = web.AppRunner(application)
     await runner.setup()
     site = web.TCPSite(runner, "127.0.0.1", 0)
@@ -117,3 +122,55 @@ async def test_check_node_dispatch(http_port):
     assert await PingService.check_node(tcp_node) is True
     assert await PingService.check_node(http_node) is True
     assert await PingService.check_node(unknown) is False
+
+
+async def test_metadata_and_unspecified_addresses_are_blocked():
+    assert is_blocked_ip("169.254.169.254") is True
+    assert is_blocked_ip("0.0.0.0") is True
+    assert is_blocked_ip("::") is True
+    assert is_blocked_ip("example.com") is False
+    assert await PingService.check_tcp("169.254.169.254", 80, 1) is False
+    assert await target_allowed("169.254.169.254") == "адрес запрещён"
+
+
+async def test_private_targets_are_blocked_only_when_enabled():
+    assert await target_allowed("10.0.0.1", block_private=False) is None
+    assert await target_allowed("10.0.0.1", block_private=True) == "адрес запрещён"
+    assert await target_allowed("127.0.0.1", block_private=True) == "адрес запрещён"
+    assert await target_allowed("192.168.1.1", block_private=True) == "адрес запрещён"
+
+
+async def test_http_body_is_size_limited(http_port):
+    base = f"http://127.0.0.1:{http_port}"
+    status, error = await PingService.check_http_detailed(
+        f"{base}/big", 2, expected_response="x"
+    )
+    assert status is False
+    assert error == "ответ больше 64 КБ"
+
+
+async def test_http_check_does_not_follow_redirects():
+    from aiohttp import web
+
+    async def redirect(request):
+        raise web.HTTPFound("/")
+
+    async def ok(request):
+        return web.Response(text="healthy")
+
+    application = web.Application()
+    application.router.add_get("/redirect", redirect)
+    application.router.add_get("/", ok)
+    runner = web.AppRunner(application)
+    await runner.setup()
+    site = web.TCPSite(runner, "127.0.0.1", 0)
+    await site.start()
+    port = site._server.sockets[0].getsockname()[1]
+    try:
+        status, error = await PingService.check_http_detailed(
+            f"http://127.0.0.1:{port}/redirect", 2
+        )
+        assert status is False
+        assert error == "HTTP 302"
+    finally:
+        await runner.cleanup()

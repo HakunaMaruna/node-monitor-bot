@@ -5,10 +5,10 @@ from app.handlers.admin import cmd_version
 from app.version import VERSION
 
 
-def test_version_is_1_0():
+def test_version_is_1_10():
     version_file = Path(__file__).resolve().parents[1] / "VERSION"
-    assert version_file.read_text(encoding="utf-8").strip() == "1.9"
-    assert VERSION == "1.9"
+    assert version_file.read_text(encoding="utf-8").strip() == "1.10"
+    assert VERSION == "1.10"
 
 
 def test_version_command_answers_with_version():
@@ -28,4 +28,4 @@ def test_version_command_answers_with_version():
 
     asyncio.run(cmd_version(message, state))
 
-    assert message.answers == ["Node Monitor Bot ver. 1.9"]
+    assert message.answers == [f"Node Monitor Bot ver. {VERSION}"]
