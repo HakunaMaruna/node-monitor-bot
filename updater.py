@@ -14,6 +14,18 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+SHELL_METACHARS = frozenset(";|&$`><()\n")
+DEFAULT_FETCH_COMMAND = ("git", "fetch", "--tags", "origin")
+DEFAULT_UPDATE_COMMANDS = (
+    ("docker", "compose", "pull"),
+    ("docker", "compose", "up", "-d", "--force-recreate", "--remove-orphans"),
+)
+DEFAULT_STOP_COMMANDS = (("docker", "compose", "down"),)
+DEFAULT_ROLLBACK_START_COMMANDS = (
+    ("docker", "compose", "build"),
+    ("docker", "compose", "up", "-d", "--force-recreate", "--remove-orphans"),
+)
+
 
 def load_env_file(path: Path) -> None:
     if not path.is_file():
@@ -32,6 +44,39 @@ def load_env_file(path: Path) -> None:
         os.environ.setdefault(key, value)
 
 
+def split_command_line(value: str) -> tuple[str, ...]:
+    """Разбирает строку команды в argv, не отдавая её shell."""
+    argv = tuple(shlex.split(value))
+    for arg in argv:
+        if any(char in arg for char in SHELL_METACHARS):
+            raise RuntimeError(
+                f"Команда '{value}' содержит символы оболочки. "
+                "Опишите её отдельными аргументами без |, ;, &, $ и перенаправлений."
+            )
+    return argv
+
+
+def parse_command_chain(value: str | None, default: tuple[tuple[str, ...], ...]):
+    if value is None or not value.strip():
+        return default
+    commands = []
+    for part in value.split("&&"):
+        argv = split_command_line(part)
+        if not argv:
+            raise RuntimeError(f"Пустая команда в '{value}'")
+        commands.append(argv)
+    return tuple(commands)
+
+
+def parse_single_command(value: str | None, default: tuple[str, ...]) -> tuple[str, ...]:
+    if value is None or not value.strip():
+        return default
+    argv = split_command_line(value)
+    if not argv:
+        raise RuntimeError(f"Пустая команда в '{value}'")
+    return argv
+
+
 @dataclass
 class UpdaterConfig:
     deploy_dir: Path
@@ -42,11 +87,13 @@ class UpdaterConfig:
     backup_dir: Path
     include_env: bool
     check_interval_sec: int
-    fetch_command: str
-    update_command: str
-    stop_command: str
-    rollback_start_command: str
+    fetch_command: tuple[str, ...]
+    update_commands: tuple[tuple[str, ...], ...]
+    stop_commands: tuple[tuple[str, ...], ...]
+    rollback_start_commands: tuple[tuple[str, ...], ...]
     telegram_api: str
+    send_backup: bool = False
+    require_signed_tags: bool = False
 
     @classmethod
     def from_env(cls, deploy_dir: str | None = None) -> "UpdaterConfig":
@@ -63,17 +110,15 @@ class UpdaterConfig:
             github_repo=os.getenv("GITHUB_REPO", "HakunaMaruna/node-monitor-bot"),
             github_token=os.getenv("GITHUB_TOKEN", ""),
             backup_dir=backup_dir,
-            include_env=os.getenv("INCLUDE_ENV", "1") not in {"0", "false", "False"},
+            include_env=os.getenv("INCLUDE_ENV", "0") not in {"0", "false", "False"},
+            send_backup=os.getenv("SEND_BACKUP", "0") not in {"0", "false", "False"},
+            require_signed_tags=os.getenv("REQUIRE_SIGNED_TAGS", "0") not in {"0", "false", "False"},
             check_interval_sec=int(os.getenv("CHECK_INTERVAL_SEC", "3600")),
-            fetch_command=os.getenv("FETCH_COMMAND", "git fetch --tags --force"),
-            update_command=os.getenv(
-                "UPDATE_COMMAND",
-                "docker compose pull && docker compose up -d --force-recreate --remove-orphans",
-            ),
-            stop_command=os.getenv("STOP_COMMAND", "docker compose down"),
-            rollback_start_command=os.getenv(
-                "ROLLBACK_START_COMMAND",
-                "docker compose build && docker compose up -d --force-recreate --remove-orphans",
+            fetch_command=parse_single_command(os.getenv("FETCH_COMMAND"), DEFAULT_FETCH_COMMAND),
+            update_commands=parse_command_chain(os.getenv("UPDATE_COMMAND"), DEFAULT_UPDATE_COMMANDS),
+            stop_commands=parse_command_chain(os.getenv("STOP_COMMAND"), DEFAULT_STOP_COMMANDS),
+            rollback_start_commands=parse_command_chain(
+                os.getenv("ROLLBACK_START_COMMAND"), DEFAULT_ROLLBACK_START_COMMANDS
             ),
             telegram_api=os.getenv("TELEGRAM_API", "https://api.telegram.org").rstrip("/"),
         )
@@ -86,7 +131,7 @@ def local_version(deploy_dir: Path) -> str:
 
 def ensure_clean_worktree(config: UpdaterConfig) -> None:
     status = run_command(
-        "git status --porcelain --untracked-files=no",
+        ("git", "status", "--porcelain", "--untracked-files=no"),
         config.deploy_dir,
     )
     if status:
@@ -95,6 +140,45 @@ def ensure_clean_worktree(config: UpdaterConfig) -> None:
             "Обновление остановлено, чтобы не потерять правки:\n"
             f"{status[:2000]}"
         )
+
+
+def verify_origin(config: UpdaterConfig) -> None:
+    url = run_command(("git", "remote", "get-url", "origin"), config.deploy_dir).strip()
+    normalized = url.lower().rstrip("/").replace(":", "/")
+    if normalized.endswith(".git"):
+        normalized = normalized[: -len(".git")]
+    expected = f"github.com/{config.github_repo}".lower().rstrip("/")
+    if expected not in normalized:
+        raise RuntimeError(
+            f"origin указывает не на {config.github_repo}: {url}. Обновление остановлено."
+        )
+
+
+def verify_tag_signature(config: UpdaterConfig, tag: str) -> None:
+    allowed_signers = config.deploy_dir / ".allowed_signers"
+    if allowed_signers.is_file():
+        run_command(
+            (
+                "git",
+                "-c",
+                f"gpg.ssh.allowedSignersFile={allowed_signers}",
+                "verify-tag",
+                "--raw",
+                tag,
+            ),
+            config.deploy_dir,
+        )
+        return
+    if config.require_signed_tags:
+        raise RuntimeError(
+            "Тег не проверен: нет файла .allowed_signers в каталоге деплоя, "
+            "а REQUIRE_SIGNED_TAGS=1. Обновление остановлено."
+        )
+    print(
+        "ВНИМАНИЕ: .allowed_signers не найден, подпись тега не проверяется. "
+        "Добавьте .allowed_signers и REQUIRE_SIGNED_TAGS=1.",
+        flush=True,
+    )
 
 
 def parse_version(value: str) -> tuple[int, ...]:
@@ -179,6 +263,8 @@ def send_backup(config: UpdaterConfig, backup_path: Path, version: str) -> None:
     if size > 45 * 1024 * 1024:
         raise RuntimeError("Архив бэкапа больше 45 МБ, Telegram не примет его как документ")
     caption = f"Бэкап Node Monitor Bot перед обновлением до {version}"
+    if config.include_env:
+        caption += " (с .env — удалите сообщение после восстановления)"
     telegram_request(
         config,
         "sendDocument",
@@ -189,9 +275,19 @@ def send_backup(config: UpdaterConfig, backup_path: Path, version: str) -> None:
 
 def create_backup(config: UpdaterConfig, version: str) -> Path:
     config.backup_dir.mkdir(parents=True, exist_ok=True)
+    os.chmod(config.backup_dir, 0o700)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     backup_path = config.backup_dir / f"node-monitor-backup-{version}-{stamp}.tar.gz"
-    excluded_dirs = {".git", "backups", "__pycache__", ".pytest_cache", ".trail"}
+    excluded_dirs = {
+        ".git",
+        "backups",
+        "__pycache__",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".trail",
+        "venv",
+        ".venv",
+    }
     excluded_suffixes = {".pyc", ".pyo"}
 
     files = []
@@ -227,6 +323,7 @@ def create_backup(config: UpdaterConfig, version: str) -> Path:
         info.size = len(manifest)
         info.mtime = int(time.time())
         archive.addfile(info, io.BytesIO(manifest))
+    os.chmod(backup_path, 0o600)
     return backup_path
 
 
@@ -251,12 +348,12 @@ def safe_extract(backup_path: Path, target: Path) -> None:
                         output.write(chunk)
 
 
-def run_command(command: str, cwd: Path) -> str:
-    if not command:
+def run_command(argv: tuple[str, ...] | list[str], cwd: Path) -> str:
+    if not argv:
         return ""
     result = subprocess.run(
-        command,
-        shell=True,
+        list(argv),
+        shell=False,
         cwd=cwd,
         check=False,
         capture_output=True,
@@ -264,31 +361,44 @@ def run_command(command: str, cwd: Path) -> str:
     )
     if result.returncode != 0:
         output = (result.stdout + result.stderr).strip()[-2000:]
-        raise RuntimeError(f"Команда '{command}' завершилась с кодом {result.returncode}:\n{output}")
+        raise RuntimeError(
+            f"Команда '{' '.join(argv)}' завершилась с кодом {result.returncode}:\n{output}"
+        )
     return (result.stdout + result.stderr).strip()
 
 
 def rollback(config: UpdaterConfig, backup_path: Path) -> None:
     if not backup_path.exists():
         raise RuntimeError(f"Файл бэкапа не найден: {backup_path}")
-    run_command(config.stop_command, config.deploy_dir)
+    for command in config.stop_commands:
+        run_command(command, config.deploy_dir)
     safe_extract(backup_path, config.deploy_dir)
-    run_command(config.rollback_start_command, config.deploy_dir)
+    for command in config.rollback_start_commands:
+        run_command(command, config.deploy_dir)
 
 
-def perform_update(config: UpdaterConfig, version: str) -> None:
+def prepare_update(config: UpdaterConfig, version: str) -> str:
+    """Проверяет источник обновления и возвращает имя тега. Ничего не меняет на диске."""
     tag = version if version.startswith("v") else f"v{version}"
     ensure_clean_worktree(config)
+    verify_origin(config)
     run_command(config.fetch_command, config.deploy_dir)
-    run_command(f"git rev-parse --verify {shlex.quote(f'refs/tags/{tag}')}", config.deploy_dir)
-    run_command(f"git checkout --force {shlex.quote(tag)}", config.deploy_dir)
+    run_command(("git", "rev-parse", "--verify", f"refs/tags/{tag}"), config.deploy_dir)
+    verify_tag_signature(config, tag)
+    return tag
+
+
+def perform_update(config: UpdaterConfig, version: str, *, tag: str | None = None) -> None:
+    tag = tag or prepare_update(config, version)
+    run_command(("git", "checkout", "--detach", tag), config.deploy_dir)
     checked = local_version(config.deploy_dir)
     if parse_version(checked) != parse_version(tag):
         raise RuntimeError(
             f"После checkout {tag} в VERSION указана версия {checked}. "
             "Обновление остановлено, чтобы не запустить чужой код."
         )
-    run_command(config.update_command, config.deploy_dir)
+    for command in config.update_commands:
+        run_command(command, config.deploy_dir)
 
 
 def update_flow(config: UpdaterConfig) -> bool:
@@ -301,23 +411,29 @@ def update_flow(config: UpdaterConfig) -> bool:
         return False
 
     try:
-        ensure_clean_worktree(config)
+        tag = prepare_update(config, version)
     except RuntimeError as exc:
         send_message(config, f"Автообновление до {version} не запущено.\n{exc}")
         return False
 
     backup_path = create_backup(config, version)
-    send_backup(config, backup_path, version)
+    if config.send_backup:
+        send_backup(config, backup_path, version)
     url = release.get("html_url", "")
+    backup_note = (
+        f"Бэкап отправлен: {backup_path.name}"
+        if config.send_backup
+        else f"Бэкап сохранён локально: {backup_path.name}"
+    )
     send_message(
         config,
         f"Доступна версия {version} Node Monitor Bot.\n"
-        f"Бэкап отправлен: {backup_path.name}\n"
+        f"{backup_note}\n"
         f"Начинаю автообновление.\n{url}",
     )
 
     try:
-        perform_update(config, version)
+        perform_update(config, version, tag=tag)
     except Exception as exc:
         try:
             rollback(config, backup_path)
