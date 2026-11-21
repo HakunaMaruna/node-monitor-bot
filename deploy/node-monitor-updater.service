@@ -7,4 +7,15 @@ Wants=network-online.target
 Type=oneshot
 WorkingDirectory=/opt/node-monitor-bot
 EnvironmentFile=/opt/node-monitor-bot/.env
+UMask=0077
+# Апдейтер работает от root (нужен docker.sock), поэтому ограничиваем его ФС и привилегии.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+ReadWritePaths=/opt/node-monitor-bot
 ExecStart=/usr/bin/python3 /opt/node-monitor-bot/updater.py update
