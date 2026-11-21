@@ -418,7 +418,7 @@ def format_probe_result(node: Node, payload: dict) -> str:
         f"{ICON['shield']} <b>ДИНАМИЧЕСКАЯ ПРОВЕРКА CHEBURCHECK</b>",
         f"{ICON['node']} Нода #{node.id} · {esc(node.name)}",
         f"{ICON['link']} Цель: <code>{esc(payload.get('target', '—'))}</code>",
-        f"{ICON['info']} Сканеров ответило: <b>{payload.get('response_count', 0)}/{payload.get('online_probes', '?')}</b>",
+        f"{ICON['info']} Сканеров ответило: <b>{esc(payload.get('response_count', 0))}/{esc(payload.get('online_probes', '?'))}</b>",
     ]
     verdicts = payload.get("verdicts") or []
     if verdicts:
