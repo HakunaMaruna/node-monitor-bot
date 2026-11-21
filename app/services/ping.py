@@ -1,12 +1,38 @@
 import asyncio
+import socket
 import time
 from dataclasses import dataclass
-from ipaddress import ip_address
+from ipaddress import ip_address, ip_network
 
 import aiohttp
 from yarl import URL
 
+from app.config import settings
 from app.models.node import Node
+
+MAX_BODY_BYTES = 64 * 1024
+
+# Запрещены всегда: адреса метаданных облака, широковещательные и служебные диапазоны.
+ALWAYS_BLOCKED_NETS = (
+    ip_network("0.0.0.0/8"),
+    ip_network("169.254.0.0/16"),
+    ip_network("224.0.0.0/4"),
+    ip_network("240.0.0.0/4"),
+    ip_network("::/128"),
+    ip_network("fe80::/10"),
+    ip_network("ff00::/8"),
+)
+
+# Внутренние сети: запрещаются при BLOCK_PRIVATE_TARGETS=1.
+PRIVATE_NETS = (
+    ip_network("10.0.0.0/8"),
+    ip_network("100.64.0.0/10"),
+    ip_network("127.0.0.0/8"),
+    ip_network("172.16.0.0/12"),
+    ip_network("192.168.0.0/16"),
+    ip_network("fc00::/7"),
+    ip_network("::1/128"),
+)
 
 
 @dataclass(frozen=True)
@@ -25,6 +51,51 @@ def _error_text(exc: BaseException) -> str:
         return "соединение отклонено"
     text = " ".join(str(exc).split()) or exc.__class__.__name__
     return text[:120]
+
+
+def is_blocked_ip(host: str, *, block_private: bool | None = None) -> bool:
+    try:
+        ip = ip_address(str(host).strip().strip("[]"))
+    except ValueError:
+        return False
+    if ip.version == 6 and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    if block_private is None:
+        block_private = settings.BLOCK_PRIVATE_TARGETS
+    nets = ALWAYS_BLOCKED_NETS + PRIVATE_NETS if block_private else ALWAYS_BLOCKED_NETS
+    return any(ip in net for net in nets if net.version == ip.version)
+
+
+async def resolve_host(host: str) -> list[str]:
+    loop = asyncio.get_running_loop()
+    infos = await loop.getaddrinfo(host, None, type=socket.SOCK_STREAM)
+    addresses: list[str] = []
+    for info in infos:
+        address = info[4][0]
+        if address not in addresses:
+            addresses.append(address)
+    return addresses
+
+
+async def target_allowed(host: str, *, block_private: bool | None = None) -> str | None:
+    """None, если проверять цель можно; иначе текст причины отказа."""
+    host = (host or "").strip().strip("[]")
+    if not host:
+        return "пустой адрес"
+    if is_blocked_ip(host, block_private=block_private):
+        return "адрес запрещён"
+    try:
+        ip_address(host)
+        return None
+    except ValueError:
+        pass
+    try:
+        addresses = await resolve_host(host)
+    except (OSError, UnicodeError):
+        return None
+    if any(is_blocked_ip(address, block_private=block_private) for address in addresses):
+        return "адрес запрещён"
+    return None
 
 
 def split_host_and_port(raw: str) -> tuple[str, int | None]:
@@ -75,9 +146,24 @@ def build_check_url(node: Node) -> str | None:
         return None
 
 
+async def _read_body_limited(
+    response: aiohttp.ClientResponse, limit: int = MAX_BODY_BYTES
+) -> str | None:
+    """Читает не больше limit байт; None, если ответ больше лимита."""
+    if response.content_length is not None and response.content_length > limit:
+        return None
+    raw = await response.content.read(limit + 1)
+    if len(raw) > limit:
+        return None
+    return raw.decode(response.charset or "utf-8", errors="replace")
+
+
 class PingService:
     @staticmethod
     async def check_tcp_detailed(ip: str, port: int, timeout: int) -> tuple[bool, str | None]:
+        forbidden = await target_allowed(ip)
+        if forbidden is not None:
+            return False, forbidden
         writer = None
         try:
             _, writer = await asyncio.wait_for(
@@ -107,14 +193,24 @@ class PingService:
         expected_response: str | None = None,
     ) -> tuple[bool, str | None]:
         try:
+            host = URL(url).host
+        except ValueError:
+            return False, "неверный адрес"
+        if host is not None:
+            forbidden = await target_allowed(host)
+            if forbidden is not None:
+                return False, forbidden
+        try:
             client_timeout = aiohttp.ClientTimeout(total=timeout)
             async with aiohttp.ClientSession(timeout=client_timeout) as session:
-                async with session.get(url) as response:
+                async with session.get(url, allow_redirects=False) as response:
                     if response.status != expected_code:
                         return False, f"HTTP {response.status}"
                     if expected_response is None:
                         return True, None
-                    body = await response.text()
+                    body = await _read_body_limited(response)
+                    if body is None:
+                        return False, "ответ больше 64 КБ"
                     if expected_response in body:
                         return True, None
                     return False, "ожидаемый текст не найден"
