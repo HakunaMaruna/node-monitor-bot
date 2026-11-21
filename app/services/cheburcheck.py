@@ -1,6 +1,8 @@
 import asyncio
 import json
 import logging
+import re
+from urllib.parse import quote
 
 import aiohttp
 from yarl import URL
@@ -13,6 +15,10 @@ from app.services.ping import split_host_and_port
 from app.utils.formatting import format_blocked_error, format_blocked_verdict
 
 logger = logging.getLogger(__name__)
+
+MAX_EVENT_LINE_BYTES = 64 * 1024
+MAX_PROBE_RESULTS = 500
+CONTEXT_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,128}")
 
 
 class CheburcheckError(Exception):
@@ -149,11 +155,14 @@ async def probe_check(
     except (aiohttp.ClientError, asyncio.TimeoutError, OSError, ValueError) as exc:
         raise CheburcheckError(f"ошибка запроса к Cheburcheck: {exc}") from exc
 
-    context_id = payload.get("id") if isinstance(payload, dict) else None
+    raw_context_id = payload.get("id") if isinstance(payload, dict) else None
+    context_id = str(raw_context_id).strip() if raw_context_id else ""
     if not context_id:
         raise CheburcheckError("Cheburcheck не вернул контекст для динамической проверки")
+    if not CONTEXT_ID_RE.fullmatch(context_id):
+        raise CheburcheckError("Cheburcheck вернул некорректный идентификатор контекста")
 
-    url = f"{base}/probe/{context_id}"
+    url = f"{base}/probe/{quote(context_id, safe='')}"
     results: list[dict] = []
     started: dict | None = None
     done: dict | None = None
@@ -195,6 +204,10 @@ async def probe_check(
                 while True:
                     raw = await response.content.readline()
                     if not raw:
+                        break
+                    if len(raw) > MAX_EVENT_LINE_BYTES:
+                        raise CheburcheckError("слишком длинная строка в потоке Cheburcheck")
+                    if len(results) > MAX_PROBE_RESULTS:
                         break
                     line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
                     if line == "":
