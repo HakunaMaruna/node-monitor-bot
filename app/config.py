@@ -18,9 +18,19 @@ class Settings(BaseSettings):
     CHEBURCHECK_TIMEOUT_SEC: int = Field(default=10, gt=0)
     CHEBURCHECK_REQUEST_DELAY_SEC: float = Field(default=2.1, gt=0)
     CHEBURCHECK_BASE_URL: str = "https://cheburcheck.ru/api/v1"
+    # 1 — запрещает проверять loopback/RFC1918/CGNAT (рекомендуется для чужих ботов)
+    BLOCK_PRIVATE_TARGETS: bool = False
     CHEBURCHECK_API_TOKEN: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    @field_validator("CHEBURCHECK_BASE_URL")
+    @classmethod
+    def cheburcheck_base_url_is_https(cls, value: str) -> str:
+        value = value.strip().rstrip("/")
+        if not value.startswith("https://"):
+            raise ValueError("CHEBURCHECK_BASE_URL должен начинаться с https://")
+        return value
 
     @field_validator("ALERT_CHAT_ID", "SUMMARY_CHAT_ID", mode="before")
     @classmethod
