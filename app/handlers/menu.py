@@ -13,7 +13,7 @@ from app.services.notifier import send_status_alert
 from app.services.cheburcheck import extract_target, probe_check
 from app.services.nodes import add_node, delete_node, get_node, list_nodes, set_enabled, set_interval
 from app.services.tspu import run_tspu_full, run_tspu_quick
-from app.utils.design import MAX_LIST_ITEMS, NODES_PER_PAGE, PARSE_MODE, esc
+from app.utils.design import ICON, MAX_LIST_ITEMS, NODES_PER_PAGE, PARSE_MODE, esc
 from app.utils.formatting import (
     format_check_result,
     format_help,
@@ -519,6 +519,20 @@ def _chunks(text: str, size: int = 3900) -> list[str]:
     return [text[index:index + size] for index in range(0, len(text), size)]
 
 
+async def _run_probe_background(bot, chat_id: int, node_id: int, target: str) -> None:
+    try:
+        node = await get_node(node_id)
+        if node is None:
+            await bot.send_message(chat_id, "Нода не найдена.", parse_mode=PARSE_MODE)
+            return
+        payload = await probe_check(target)
+        report = format_probe_result(node, payload)
+    except Exception as exc:
+        report = f"{ICON['warning']} Ошибка динамической проверки: {esc(exc)}"
+    for chunk in _chunks(report):
+        await bot.send_message(chat_id, chunk, parse_mode=PARSE_MODE)
+
+
 @router.callback_query(F.data.startswith("probe:"))
 async def cb_probe(callback: CallbackQuery) -> None:
     node_id = parse_id(callback.data, "probe")
@@ -530,19 +544,16 @@ async def cb_probe(callback: CallbackQuery) -> None:
     if target is None:
         await answer_callback(callback, "Не удалось определить цель", show_alert=True)
         return
-    await answer_callback(callback, "Динамическая проверка запущена")
-    try:
-        payload = await probe_check(target)
-        report = format_probe_result(node, payload)
-    except Exception as exc:
-        report = f"Ошибка динамической проверки: {esc(exc)}"
+    await answer_callback(callback, "⏳ Проверка запущена в фоне")
     target_message = callback.message
-    if target_message is None:
-        await callback.bot.send_message(
-            callback.from_user.id, report, parse_mode=PARSE_MODE
-        )
-        return
-    await target_message.answer(report, parse_mode=PARSE_MODE)
+    chat_id = target_message.chat.id if target_message is not None else callback.from_user.id
+    await callback.bot.send_message(
+        chat_id,
+        f"{ICON['refresh']} <b>Динамическая проверка запущена в фоне</b>\n"
+        f"{ICON['info']} Результат придет по завершении проверки.",
+        parse_mode=PARSE_MODE,
+    )
+    asyncio.create_task(_run_probe_background(callback.bot, chat_id, node.id, target))
 
 
 @router.callback_query()

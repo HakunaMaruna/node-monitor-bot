@@ -413,30 +413,71 @@ VERDICT_TEXT = {
 }
 
 
+VERDICT_ICON = {
+    "ok": "🟢",
+    "uncertain": "⚪",
+    "cdn_block": "🔴",
+    "sni_block": "🔴",
+    "dns_spoofing": "🔴",
+    "tspu_block": "🔴",
+    "whitelist": "🟢",
+}
+
+
 def format_probe_result(node: Node, payload: dict) -> str:
+    results = payload.get("results") or []
+    online = payload.get("online_probes", "?")
+    responded = payload.get("response_count", 0)
+    cached_count = sum(1 for item in results if item.get("cached"))
+
+    verdict_counter: dict[str, int] = {}
+    for item in results:
+        for verdict in item.get("verdicts") or []:
+            verdict_counter[verdict] = verdict_counter.get(verdict, 0) + 1
+
     lines = [
         f"{ICON['shield']} <b>ДИНАМИЧЕСКАЯ ПРОВЕРКА CHEBURCHECK</b>",
         f"{ICON['node']} Нода #{node.id} · {esc(node.name)}",
         f"{ICON['link']} Цель: <code>{esc(payload.get('target', '—'))}</code>",
-        f"{ICON['info']} Сканеров ответило: <b>{esc(payload.get('response_count', 0))}/{esc(payload.get('online_probes', '?'))}</b>",
+        f"{ICON['info']} Сканеров: <b>{esc(responded)}/{esc(online)}</b> ответили"
+        + (f" · кеш: <b>{cached_count}</b>" if cached_count else ""),
     ]
-    verdicts = payload.get("verdicts") or []
-    if verdicts:
+
+    if verdict_counter:
         lines.extend(["", f"{ICON['shield']} <b>ВЕРДИКТЫ</b>"])
-        for verdict in verdicts:
-            lines.append(f"  • {esc(VERDICT_TEXT.get(verdict, verdict))}")
+        for verdict, count in sorted(verdict_counter.items(), key=lambda item: (-item[1], item[0])):
+            icon = VERDICT_ICON.get(verdict, "•")
+            title = VERDICT_TEXT.get(verdict, verdict)
+            lines.append(f"  {icon} {esc(title)}: <b>{count}</b>")
+    elif payload.get("verdicts"):
+        lines.extend(["", f"{ICON['shield']} <b>ВЕРДИКТЫ</b>"])
+        for verdict in payload.get("verdicts") or []:
+            icon = VERDICT_ICON.get(verdict, "•")
+            lines.append(f"  {icon} {esc(VERDICT_TEXT.get(verdict, verdict))}")
     else:
         lines.extend(["", "Вердикты не получены."])
 
-    results = payload.get("results") or []
     if results:
-        lines.extend(["", f"{ICON['info']} <b>СКАНЕРЫ</b>"])
+        lines.extend(["", f"{ICON['info']} <b>СКАНЕРЫ</b> (первые 10 из {len(results)})"])
         for result in results[:10]:
             probe_id = result.get("probe_id", "?")
             region = result.get("region") or result.get("provider") or "—"
-            verdict_list = ", ".join(result.get("verdicts") or []) or "—"
-            cached = " (кеш)" if result.get("cached") else ""
-            lines.append(f"  #{esc(probe_id)} {esc(region)}{cached}: {esc(verdict_list)}")
+            provider = result.get("provider")
+            asn = result.get("asn")
+            verdicts = result.get("verdicts") or []
+            verdict_display = ", ".join(
+                f"{VERDICT_ICON.get(v, '⚪')} {VERDICT_TEXT.get(v, v)}" for v in verdicts
+            ) or "⚪ —"
+            cached = bool(result.get("cached"))
+            lines.append(f"  🔹 <b>Сканер #{esc(probe_id)}</b>")
+            lines.append(f"     🏢 {esc(region)}")
+            if provider and provider != region:
+                lines.append(f"     📞 {esc(provider)}")
+            if asn:
+                lines.append(f"     🌐 {esc(asn)}")
+            if cached:
+                lines.append(f"     💾 кеш")
+            lines.append(f"     {verdict_display}")
         if len(results) > 10:
             lines.append(f"  … и ещё {len(results) - 10}")
     return "\n".join(lines)

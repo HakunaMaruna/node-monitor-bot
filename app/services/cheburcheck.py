@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 MAX_EVENT_LINE_BYTES = 64 * 1024
 MAX_PROBE_RESULTS = 500
-CONTEXT_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,128}")
+CONTEXT_ID_RE = re.compile(r"[A-Za-z0-9._-]{1,1024}")
 
 
 class CheburcheckError(Exception):
@@ -147,6 +147,8 @@ async def probe_check(
                 params={"target": target},
                 headers={"Accept": "application/json"},
             ) as response:
+                if response.status == 429:
+                    raise CheburcheckError("превышен лимит запросов Cheburcheck, попробуйте позже")
                 if response.status >= 400:
                     raise CheburcheckError(f"Cheburcheck вернул HTTP {response.status}")
                 payload = await response.json(content_type=None)
@@ -159,6 +161,8 @@ async def probe_check(
     context_id = str(raw_context_id).strip() if raw_context_id else ""
     if not context_id:
         raise CheburcheckError("Cheburcheck не вернул контекст для динамической проверки")
+    if ".." in context_id or context_id.startswith(".") or context_id.endswith("."):
+        raise CheburcheckError("Cheburcheck вернул некорректный идентификатор контекста")
     if not CONTEXT_ID_RE.fullmatch(context_id):
         raise CheburcheckError("Cheburcheck вернул некорректный идентификатор контекста")
 
@@ -185,44 +189,51 @@ async def probe_check(
         elif event_name == "done" and isinstance(data, dict):
             done = data
 
-    try:
-        async with aiohttp.ClientSession(timeout=client_timeout) as session:
-            async with session.get(
-                url,
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "Accept": "text/event-stream",
-                },
-            ) as response:
-                if response.status == 401:
-                    raise CheburcheckError("неверный или просроченный API-токен Cheburcheck")
-                if response.status == 403:
-                    raise CheburcheckError("нет доступа к динамическим сканерам Cheburcheck")
-                if response.status >= 400:
-                    raise CheburcheckError(f"Cheburcheck probe вернул HTTP {response.status}")
+    for attempt in range(3):
+        try:
+            async with aiohttp.ClientSession(timeout=client_timeout) as session:
+                async with session.get(
+                    url,
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "Accept": "text/event-stream",
+                    },
+                ) as response:
+                    if response.status == 429:
+                        if attempt < 2:
+                            await asyncio.sleep(3 * (attempt + 1))
+                            continue
+                        raise CheburcheckError("превышен лимит запросов Cheburcheck, попробуйте позже")
+                    if response.status == 401:
+                        raise CheburcheckError("неверный или просроченный API-токен Cheburcheck")
+                    if response.status == 403:
+                        raise CheburcheckError("нет доступа к динамическим сканерам Cheburcheck")
+                    if response.status >= 400:
+                        raise CheburcheckError(f"Cheburcheck probe вернул HTTP {response.status}")
 
-                while True:
-                    raw = await response.content.readline()
-                    if not raw:
-                        break
-                    if len(raw) > MAX_EVENT_LINE_BYTES:
-                        raise CheburcheckError("слишком длинная строка в потоке Cheburcheck")
-                    if len(results) > MAX_PROBE_RESULTS:
-                        break
-                    line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
-                    if line == "":
-                        process_event()
-                        event_name = "message"
-                        data_lines = []
-                    elif line.startswith("event:"):
-                        event_name = line[6:].strip() or "message"
-                    elif line.startswith("data:"):
-                        data_lines.append(line[5:].strip())
-                process_event()
-    except CheburcheckError:
-        raise
-    except (aiohttp.ClientError, asyncio.TimeoutError, OSError, ValueError) as exc:
-        raise CheburcheckError(f"ошибка динамической проверки Cheburcheck: {exc}") from exc
+                    while True:
+                        raw = await response.content.readline()
+                        if not raw:
+                            break
+                        if len(raw) > MAX_EVENT_LINE_BYTES:
+                            raise CheburcheckError("слишком длинная строка в потоке Cheburcheck")
+                        if len(results) > MAX_PROBE_RESULTS:
+                            break
+                        line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
+                        if line == "":
+                            process_event()
+                            event_name = "message"
+                            data_lines = []
+                        elif line.startswith("event:"):
+                            event_name = line[6:].strip() or "message"
+                        elif line.startswith("data:"):
+                            data_lines.append(line[5:].strip())
+                    process_event()
+            break
+        except CheburcheckError:
+            raise
+        except (aiohttp.ClientError, asyncio.TimeoutError, OSError, ValueError) as exc:
+            raise CheburcheckError(f"ошибка динамической проверки Cheburcheck: {exc}") from exc
 
     verdicts: set[str] = set()
     for result in results:
