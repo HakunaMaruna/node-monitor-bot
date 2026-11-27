@@ -182,7 +182,8 @@ def verify_tag_signature(config: UpdaterConfig, tag: str) -> None:
 
 
 def parse_version(value: str) -> tuple[int, ...]:
-    parts = tuple(int(part) for part in re.findall(r"\d+", value))
+    core = value.strip().split("+", 1)[0].split("-", 1)[0]
+    parts = tuple(int(part) for part in re.findall(r"\d+", core))
     return parts + (0,) * (3 - len(parts)) if len(parts) < 3 else parts
 
 
@@ -336,9 +337,11 @@ def safe_extract(backup_path: Path, target: Path) -> None:
             destination = (root / member.name).resolve()
             if destination != root and root not in destination.parents:
                 raise RuntimeError(f"Небезопасный путь в архиве: {member.name}")
+            if not (member.isdir() or member.isfile()):
+                raise RuntimeError(f"Небезопасный тип элемента в архиве: {member.name}")
             if member.isdir():
                 destination.mkdir(parents=True, exist_ok=True)
-            elif member.isfile():
+            else:
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 source = archive.extractfile(member)
                 if source is None:

@@ -37,7 +37,7 @@ Telegram-бот для периодической проверки нод (TCP/H
 ├── .github/workflows/docker-publish.yml  сборка и публикация образа в GHCR
 ├── updater.py                   host-updater: GitHub Release → проверка worktree/версии → бэкап → Telegram → update → rollback
 ├── deploy/                      примеры systemd unit/timer для updater
-├── VERSION                      текущая версия бота (1.7)
+├── VERSION                      текущая версия бота (1.12)
 ├── DOCKER.md                    подробная инструкция по Docker
 ├── UPDATES.md                   автообновление, бэкапы и откат
 └── README.md                    установка и команды бота

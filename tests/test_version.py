@@ -5,10 +5,9 @@ from app.handlers.admin import cmd_version
 from app.version import VERSION
 
 
-def test_version_is_1_10():
+def test_version_matches_version_file():
     version_file = Path(__file__).resolve().parents[1] / "VERSION"
-    assert version_file.read_text(encoding="utf-8").strip() == "1.10"
-    assert VERSION == "1.10"
+    assert VERSION == version_file.read_text(encoding="utf-8").strip()
 
 
 def test_version_command_answers_with_version():

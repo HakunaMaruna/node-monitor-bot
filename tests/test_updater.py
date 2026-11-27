@@ -48,6 +48,13 @@ def test_version_comparison():
     assert updater.is_newer("0.9", "1.0") is False
 
 
+def test_version_comparison_ignores_prerelease_suffixes():
+    assert updater.parse_version("v1.11-rc1") == (1, 11, 0)
+    assert updater.parse_version("1.11+build.5") == (1, 11, 0)
+    assert updater.is_newer("v1.11-rc1", "1.11") is False
+    assert updater.is_newer("v1.12-rc1", "1.11") is True
+
+
 def test_from_env_loads_dotenv_without_overriding_environment(tmp_path, monkeypatch):
     root = tmp_path / "deploy"
     root.mkdir()
@@ -222,6 +229,21 @@ def test_safe_extract_restores_files(tmp_path):
     assert (config.deploy_dir / "nodes.db").read_bytes() == b"database"
     assert (config.deploy_dir / "app" / "main.py").read_text(encoding="utf-8") == "print(1)"
     assert not (config.deploy_dir / ".updater").exists()
+
+
+def test_safe_extract_rejects_symlink_members(tmp_path):
+    target = tmp_path / "deploy"
+    target.mkdir()
+    archive_path = tmp_path / "evil.tar.gz"
+    with tarfile.open(archive_path, "w:gz") as archive:
+        info = tarfile.TarInfo("escape")
+        info.type = tarfile.SYMTYPE
+        info.linkname = "/etc"
+        archive.addfile(info)
+
+    with pytest.raises(RuntimeError, match="Небезопасный тип"):
+        updater.safe_extract(archive_path, target)
+    assert not (target / "escape").exists()
 
 
 def test_send_backup_uses_document_with_caption(tmp_path, monkeypatch):

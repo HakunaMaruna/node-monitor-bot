@@ -1,6 +1,6 @@
 # Автообновление Node Monitor Bot
 
-Текущая версия бота — `ver. 1.10`, она зафиксирована в файле `VERSION` и git-теге `v1.10`.
+Текущая версия бота — `ver. 1.12`, она зафиксирована в файле `VERSION` и git-теге `v1.12`.
 
 Обновление выполняется отдельным скриптом на хосте: `updater.py`. Он не обновляет работающий контейнер изнутри, а управляет репозиторием и Docker Compose снаружи.
 
@@ -89,7 +89,7 @@ python3 updater.py rollback backups/node-monitor-backup-v1.9-20261120T120000Z.ta
 
 ## Проверка версии в боте
 
-`/version` — показывает текущую версию, например `Node Monitor Bot ver. 1.10`.
+`/version` — показывает текущую версию, например `Node Monitor Bot ver. 1.12`.
 
 ## Подпись тегов (рекомендуется)
 
@@ -101,7 +101,7 @@ Updater умеет проверять подпись тега перед checkou
 # на машине, которой доверяет сервер
 ssh-keygen -t ed25519 -C "releases" -f ~/.ssh/release_signing
 git config user.signingkey ~/.ssh/release_signing.pub
-git tag -s v1.11 -m "v1.11"
+git tag -s v1.12 -m "v1.12"
 
 # на сервере в /opt/node-monitor-bot/.allowed_signers
 releases@example.com ssh-ed25519 AAAAC3...   # публичный ключ

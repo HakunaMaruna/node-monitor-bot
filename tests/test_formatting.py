@@ -248,6 +248,6 @@ def test_summary_includes_average_uptime():
     history = append_check(history, NOW - timedelta(minutes=5), False)
     nodes = [make_node(id=1, check_history=history)]
 
-    summary = format_summary(nodes)
+    summary = format_summary(nodes, now=NOW)
 
     assert "Средний uptime 24h: <b>50.0%</b>" in summary
